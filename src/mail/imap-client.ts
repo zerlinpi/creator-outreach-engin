@@ -18,6 +18,25 @@ export interface SearchCriteria {
   limit?: number;
 }
 
+export function buildImapClientOptions(config: AppConfig) {
+  return {
+    host: config.imap.host,
+    port: config.imap.port,
+    secure: true,
+    auth: { user: config.username, pass: config.appPassword },
+    logger: false as const,
+    connectionTimeout: config.imap.connectionTimeout,
+    greetingTimeout: config.imap.greetingTimeout,
+    socketTimeout: config.imap.socketTimeout
+  };
+}
+
+export function enforceMessageSize(size: number, maxBytes: number): void {
+  if (size > maxBytes) {
+    throw new ConnectorError('MESSAGE_TOO_LARGE', `Message exceeds the configured ${maxBytes}-byte limit.`);
+  }
+}
+
 export function encodeMessageRef(mailbox: string, uid: number): string {
   return Buffer.from(JSON.stringify({ mailbox, uid }), 'utf8').toString('base64url');
 }
@@ -57,13 +76,7 @@ export class ImapMailClient {
   constructor(private readonly config: AppConfig) {}
 
   private createClient() {
-    return new ImapFlow({
-      host: this.config.imap.host,
-      port: this.config.imap.port,
-      secure: true,
-      auth: { user: this.config.username, pass: this.config.appPassword },
-      logger: false
-    });
+    return new ImapFlow(buildImapClientOptions(this.config));
   }
 
   private async withClient<T>(fn: (client: ImapFlow) => Promise<T>): Promise<T> {
@@ -125,12 +138,17 @@ export class ImapMailClient {
       for await (const item of client.fetch(selected, { uid: true, source: true, flags: true }, { uid: true })) {
         if (!item.source) continue;
         const uid = item.uid;
-        out.push(await parseMessage(item.source, {
-          id: encodeMessageRef(mailbox, uid),
-          mailbox,
-          uid,
-          unread: !item.flags?.has('\\Seen')
-        }));
+        const truncated = item.source.length > this.config.searchSourceBytes;
+        const source = truncated ? item.source.subarray(0, this.config.searchSourceBytes) : item.source;
+        out.push({
+          ...(await parseMessage(source, {
+            id: encodeMessageRef(mailbox, uid),
+            mailbox,
+            uid,
+            unread: !item.flags?.has('\\Seen')
+          })),
+          truncated
+        });
       }
 
       return out.sort((a, b) => b.date.getTime() - a.date.getTime());
@@ -143,6 +161,7 @@ export class ImapMailClient {
       await client.mailboxOpen(mailbox);
       for await (const item of client.fetch([uid], { uid: true, source: true, flags: true }, { uid: true })) {
         if (item.source) {
+          enforceMessageSize(item.source.length, this.config.maxMessageBytes);
           return parseMessage(item.source, {
             id: ref,
             mailbox,
