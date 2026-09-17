@@ -68,6 +68,28 @@ class FailingThreadClient extends ImapMailClient {
   }
 }
 
+class CapturingThreadClient extends ImapMailClient {
+  readonly searches: SearchCriteria[] = [];
+
+  constructor() { super(config); }
+
+  override async listMailboxes() {
+    return [
+      { path: 'INBOX', specialUse: '\\Inbox' },
+      { path: 'Sent Messages', specialUse: '\\Sent' }
+    ];
+  }
+
+  override async getEmail() {
+    return { ...anchor, subject: 'Re: Fwd: CAMPX collaboration' };
+  }
+
+  override async searchEmails(criteria: SearchCriteria): Promise<NormalizedMessage[]> {
+    this.searches.push(criteria);
+    return [anchor];
+  }
+}
+
 describe('getThread error handling', () => {
   it('does not convert participant-search authentication failures into THREAD_NOT_FOUND', async () => {
     const client = new FailingThreadClient();
@@ -77,5 +99,12 @@ describe('getThread error handling', () => {
   it('does not silently return an incomplete thread when cross-folder search fails', async () => {
     const client = new FailingThreadClient();
     await expect(client.getThread({ messageRef: 'anchor' })).rejects.toMatchObject({ code: 'AUTH_FAILED' });
+  });
+
+  it('removes all repeated reply and forward prefixes before cross-folder thread searches', async () => {
+    const client = new CapturingThreadClient();
+    await client.getThread({ messageRef: 'anchor' });
+    expect(client.searches.length).toBeGreaterThan(0);
+    expect(client.searches.every((criteria) => criteria.subject === 'CAMPX collaboration')).toBe(true);
   });
 });
