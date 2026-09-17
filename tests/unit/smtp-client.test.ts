@@ -7,20 +7,39 @@ const config: AppConfig = {
   username: 'campx@example.com',
   appPassword: 'app-password',
   fromName: 'CAMPX',
-  authToken: '1234567890abcdef',
+  authToken: '1234567890abcdef1234567890abcdef',
   jsonLimit: '1mb',
   port: 3000,
-  imap: { host: 'imap.qiye.aliyun.com', port: 993, secure: true },
-  smtp: { host: 'smtp.qiye.aliyun.com', port: 465, secure: true }
+  maxMessageBytes: 10 * 1024 * 1024,
+  searchSourceBytes: 128 * 1024,
+  imap: {
+    host: 'imap.qiye.aliyun.com',
+    port: 993,
+    secure: true,
+    connectionTimeout: 15_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 30_000
+  },
+  smtp: {
+    host: 'smtp.qiye.aliyun.com',
+    port: 465,
+    secure: true,
+    connectionTimeout: 15_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 30_000
+  }
 };
 
 describe('SMTP adapter', () => {
-  it('builds implicit-TLS transport options for Alibaba Mail', () => {
+  it('builds implicit-TLS transport options with bounded timeouts for Alibaba Mail', () => {
     expect(buildSmtpTransportOptions(config)).toEqual({
       host: 'smtp.qiye.aliyun.com',
       port: 465,
       secure: true,
-      auth: { user: 'campx@example.com', pass: 'app-password' }
+      auth: { user: 'campx@example.com', pass: 'app-password' },
+      connectionTimeout: 15_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 30_000
     });
   });
 
