@@ -14,7 +14,15 @@ Seven MCP tools are exposed:
 - `reply_email` — reply to inbound or previously sent messages while preserving RFC thread headers.
 - `send_email_batch` — send separate personalized messages to multiple creators; never converts the list into a CC/BCC blast.
 
-Batch default is 10 messages and the hard maximum is 25 per tool invocation.
+Batch default is 10 messages and the hard maximum is 25 per tool invocation. Batch delivery is intentionally sequential. By default the connector waits 250 ms between creator messages and retries a temporary provider/network failure once after 1000 ms. Each batch result includes its item index, recipient list, subject, number of attempts, and final success/error so ChatGPT can identify the exact creator that needs attention.
+
+`send_email_batch` supports bounded controls when a specific sending cadence is needed:
+
+- `delay_ms` — 0–5000 ms between separate creator messages; default 250.
+- `retry_transient` — retry one temporary provider/network failure; default true.
+- `retry_delay_ms` — 0–10000 ms before the one retry; default 1000.
+
+These controls are for small creator outreach batches, not newsletter-scale sending.
 
 ## Alibaba Mail setup
 
@@ -38,6 +46,8 @@ TLS defaults:
 ### Important: keep client-sent mail in Sent
 
 For thread lookup and follow-up history, Alibaba Mail should save SMTP client messages to the server-side Sent folder. In Alibaba Webmail, check the sending settings and use a rule that saves client-sent messages (for example **Save all**). The connector discovers the Sent folder using IMAP `\\Sent` special-use metadata and falls back to common Sent folder names.
+
+`search_emails` also accepts portable mailbox aliases such as `INBOX` and `SENT`; `SENT` is resolved to the provider-designated Sent folder, so ChatGPT does not have to guess localized folder names such as `已发送` or `Sent Messages`.
 
 ## Runtime security
 
@@ -93,6 +103,7 @@ Endpoints:
 - `回复这一封，告诉他我们的常规佣金是 8%，最高可以谈到 10%，量大可以另外谈。`
 - `给这 8 个红人分别发送下面的邮件，每个人独立一封。`
 - `打开我们上一封已发送邮件，继续跟进这个红人。`
+- `给这 10 个红人分别发送首封邮件，间隔 500ms；临时失败只重试一次。`
 
 Email bodies returned by read tools are marked as external/untrusted content. Search results return only short previews; full HTML is not returned unless explicitly requested.
 
@@ -109,7 +120,7 @@ The public MCP endpoint must be HTTPS for ChatGPT. Configure `CONNECTOR_ALLOWED_
 
 ## Connect to ChatGPT
 
-ChatGPT custom apps use a remote MCP endpoint. In a workspace that supports custom MCP apps, create a custom app, provide the deployed HTTPS `/mcp` endpoint, configure authentication, scan the exposed tools, and test the draft app before publishing it to the workspace.
+ChatGPT custom apps use a remote MCP endpoint. In a workspace that supports custom MCP apps, create a custom app, provide the deployed HTTPS `/mcp` endpoint, configure a supported authentication mechanism, scan the exposed tools, and test the draft app before publishing it to the workspace.
 
 Write/modify MCP actions such as `send_email`, `reply_email`, and `send_email_batch` depend on the ChatGPT workspace plan and permissions. The mail connector itself exposes both read and write tools; the ChatGPT workspace controls which actions are allowed and when confirmation is required.
 
@@ -124,7 +135,9 @@ Before contacting creators, use an owned test inbox and verify the complete loop
 5. `get_thread` shows inbound and outbound messages together.
 6. `reply_email` remains in the same normal mail-client thread.
 7. `send_email_batch` sends separate messages to multiple owned inboxes.
-8. Confirm SMTP client messages appear in Alibaba Mail Sent.
+8. Confirm the batch result identifies each creator independently.
+9. Simulate or observe one temporary SMTP/network failure and confirm only one bounded retry occurs.
+10. Confirm SMTP client messages appear in Alibaba Mail Sent.
 
 ## Safety and behavior
 
@@ -134,6 +147,8 @@ Before contacting creators, use an owned test inbox and verify the complete loop
 - HTML is opt-in and sanitized before tool output.
 - Batch recipients are validated before the first send.
 - Duplicate recipient + subject pairs are rejected by default within one batch.
+- Batch sends are sequential and throttled rather than fired concurrently.
+- Temporary SMTP/network failures can receive one bounded retry; permanent recipient failures are not retried.
 - Replies preserve `Message-ID`, `In-Reply-To`, and `References` when available.
 - Replying from a previously sent CAMPX message correctly targets the original creator recipients.
-- No database, autonomous negotiation, automatic scheduler, or standalone CRM is included in v1.
+- The connector is intentionally not a newsletter sender, CRM, or autonomous negotiation agent.
