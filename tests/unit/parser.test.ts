@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { parseMessage } from '../../src/mail/parser.js';
 
 describe('parseMessage', () => {
-  it('normalizes multipart mail, encoded subject, RFC thread headers, and attachment metadata', async () => {
+  it('normalizes multipart mail, encoded subject, reply routing, RFC thread headers, and attachment metadata', async () => {
     const raw = [
       'From: Creator <Creator@Example.COM>',
+      'Reply-To: Partnerships <Partnerships@Agency.Example>',
       'To: CAMPX <campx@example.com>',
       'Subject: =?UTF-8?B?Q0FNUFgg4pyF?=',
       'Message-ID: <reply-2@example.com>',
@@ -39,6 +40,7 @@ describe('parseMessage', () => {
     const message = await parseMessage(raw, { id: 'ref-1', mailbox: 'INBOX', uid: 42, unread: true });
 
     expect(message.from).toEqual(['creator@example.com']);
+    expect(message.replyTo).toEqual(['partnerships@agency.example']);
     expect(message.to).toEqual(['campx@example.com']);
     expect(message.subject).toBe('CAMPX ✅');
     expect(message.messageId).toBe('<reply-2@example.com>');
