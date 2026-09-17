@@ -1,4 +1,37 @@
-import type { NormalizedMessage } from './types.js';
+import type { AttachmentMeta, NormalizedMessage } from './types.js';
+
+export interface SearchEmailSummary {
+  id: string;
+  mailbox: string;
+  from: string[];
+  to: string[];
+  subject: string;
+  date: Date;
+  unread: boolean;
+  preview: string;
+  hasAttachments: boolean;
+  messageId: string | null;
+  externalContent: true;
+}
+
+export interface EmailView {
+  id: string;
+  mailbox: string;
+  uid: number;
+  from: string[];
+  to: string[];
+  cc: string[];
+  subject: string;
+  date: Date;
+  text: string;
+  messageId: string | null;
+  inReplyTo: string | null;
+  references: string[];
+  attachments: AttachmentMeta[];
+  unread: boolean;
+  externalContent: true;
+  html?: string;
+}
 
 function compactWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
@@ -18,7 +51,7 @@ export function sanitizeHtmlForTool(html: string): string {
     .replace(/javascript\s*:/gi, '');
 }
 
-export function toSearchSummary(message: NormalizedMessage) {
+export function toSearchSummary(message: NormalizedMessage): SearchEmailSummary {
   return {
     id: message.id,
     mailbox: message.mailbox,
@@ -34,8 +67,8 @@ export function toSearchSummary(message: NormalizedMessage) {
   };
 }
 
-export function toEmailView(message: NormalizedMessage, includeHtml = false) {
-  const base = {
+export function toEmailView(message: NormalizedMessage, includeHtml = false): EmailView {
+  const view: EmailView = {
     id: message.id,
     mailbox: message.mailbox,
     uid: message.uid,
@@ -53,6 +86,6 @@ export function toEmailView(message: NormalizedMessage, includeHtml = false) {
     externalContent: true
   };
 
-  if (!includeHtml || !message.html) return base;
-  return { ...base, html: sanitizeHtmlForTool(message.html) };
+  if (includeHtml && message.html) view.html = sanitizeHtmlForTool(message.html);
+  return view;
 }
