@@ -3,7 +3,7 @@ import type { AppConfig } from '../config.js';
 import { ConnectorError } from '../errors.js';
 import { parseMessage } from './parser.js';
 import { resolveThread } from './threading.js';
-import { pickMailboxBySpecialUse } from './mailboxes.js';
+import { pickMailboxBySpecialUse, resolveMailboxAlias } from './mailboxes.js';
 import type { NormalizedMessage, ThreadResult } from './types.js';
 
 export interface SearchCriteria {
@@ -92,8 +92,17 @@ export class ImapMailClient {
     return pickMailboxBySpecialUse(boxes, '\\Sent', ['Sent', 'Sent Messages', '已发送', '已发送邮件']);
   }
 
+  private async resolveSearchMailbox(requested?: string): Promise<string> {
+    const normalized = requested?.trim().toUpperCase();
+    if (!normalized || normalized === 'INBOX' || normalized === '\\INBOX') return 'INBOX';
+    if (normalized === 'SENT' || normalized === '\\SENT') {
+      return resolveMailboxAlias(requested, await this.listMailboxes());
+    }
+    return requested!.trim();
+  }
+
   async searchEmails(criteria: SearchCriteria): Promise<NormalizedMessage[]> {
-    const mailbox = criteria.mailbox ?? 'INBOX';
+    const mailbox = await this.resolveSearchMailbox(criteria.mailbox);
     const limit = Math.max(1, Math.min(criteria.limit ?? 20, 100));
 
     return this.withClient(async (client) => {
