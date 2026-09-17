@@ -7,6 +7,13 @@ describe('batch safety', () => {
   it('defaults to a maximum of 10 messages', () => expect(() => validateBatch(Array.from({ length: 11 }, (_, i) => msg(`u${i}@example.com`)))).toThrow());
   it('never permits more than 25 messages', () => expect(() => validateBatch(Array.from({ length: 26 }, (_, i) => msg(`u${i}@example.com`)), { max: 25 })).toThrow());
   it('rejects duplicate recipient and subject pairs', () => expect(() => validateBatch([msg('a@example.com'), msg('A@example.com')])).toThrow());
+
+  it('treats empty optional cc and bcc lists as omitted', () => {
+    const [validated] = validateBatch([{ ...msg('a@example.com'), cc: [], bcc: [] }]);
+    expect(validated.cc).toBeUndefined();
+    expect(validated.bcc).toBeUndefined();
+  });
+
   it('returns independent item results', async () => {
     const result = await executeBatch([msg('a@example.com'), msg('b@example.com')], async (message) => ({ accepted: message.to, rejected: [], messageId: `<${message.to[0]}>` }));
     expect(result).toHaveLength(2);
