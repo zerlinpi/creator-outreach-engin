@@ -62,6 +62,17 @@ describe('loadConfig', () => {
     })).toThrow();
   });
 
+  it('caps per-message search source at 512 KiB even when the full-message cap is larger', () => {
+    expect(loadConfig({
+      ...baseEnv,
+      MAIL_SEARCH_SOURCE_BYTES: String(512 * 1024)
+    }).searchSourceBytes).toBe(512 * 1024);
+    expect(() => loadConfig({
+      ...baseEnv,
+      MAIL_SEARCH_SOURCE_BYTES: String(512 * 1024 + 1)
+    })).toThrow();
+  });
+
   it('rejects invalid numeric ports and timeout values', () => {
     expect(() => loadConfig({ ...baseEnv, MAIL_IMAP_PORT: 'nope' })).toThrow();
     expect(() => loadConfig({ ...baseEnv, MAIL_SMTP_PORT: '70000' })).toThrow();
