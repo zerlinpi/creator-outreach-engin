@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { AppConfig } from '../../src/config.js';
-import { buildImapClientOptions, decodeMessageRef, encodeMessageRef, enforceMessageSize } from '../../src/mail/imap-client.js';
+import {
+  buildFullMessageFetchQuery,
+  buildImapClientOptions,
+  buildSearchFetchQuery,
+  decodeMessageRef,
+  encodeMessageRef,
+  enforceMessageSize
+} from '../../src/mail/imap-client.js';
 import { ConnectorError } from '../../src/errors.js';
 
 const config: AppConfig = {
@@ -56,6 +63,24 @@ describe('IMAP resource policy', () => {
       connectionTimeout: 15_000,
       greetingTimeout: 10_000,
       socketTimeout: 30_000
+    });
+  });
+
+  it('requests only the configured source window for search results and asks for full size metadata', () => {
+    expect(buildSearchFetchQuery(config)).toEqual({
+      uid: true,
+      source: { start: 0, maxLength: 128 * 1024 },
+      size: true,
+      flags: true
+    });
+  });
+
+  it('bounds full-message retrieval to one byte beyond the configured cap so oversize messages can be rejected', () => {
+    expect(buildFullMessageFetchQuery(config)).toEqual({
+      uid: true,
+      source: { start: 0, maxLength: 10 * 1024 * 1024 + 1 },
+      size: true,
+      flags: true
     });
   });
 
