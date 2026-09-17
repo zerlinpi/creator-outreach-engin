@@ -12,10 +12,27 @@ describe('buildReplyMessage', () => {
     expect(result.inReplyTo).toBe('<parent@example.com>');
     expect(result.references).toEqual(['<root@example.com>', '<parent@example.com>']);
   });
+
   it('reply-all excludes the mailbox itself and keeps other recipients', () => {
     const result = buildReplyMessage(parent, { text: 'Thanks', replyAll: true }, 'campx@example.com');
     expect(result.to).toContain('creator@example.com');
     expect(result.cc).toContain('manager@example.com');
     expect(result.to).not.toContain('campx@example.com');
+  });
+
+  it('continues a follow-up when the selected parent message was sent by CAMPX', () => {
+    const sent: NormalizedMessage = {
+      ...parent,
+      id: 'sent:2',
+      mailbox: 'Sent Messages',
+      uid: 2,
+      from: ['campx@example.com'],
+      to: ['creator@example.com'],
+      cc: [],
+      messageId: '<sent-2@example.com>'
+    };
+    const result = buildReplyMessage(sent, { text: 'Following up' }, 'campx@example.com');
+    expect(result.to).toEqual(['creator@example.com']);
+    expect(result.inReplyTo).toBe('<sent-2@example.com>');
   });
 });
