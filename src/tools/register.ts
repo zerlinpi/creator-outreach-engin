@@ -9,6 +9,8 @@ import { toEmailView, toSearchSummary } from '../mail/presenters.js';
 import { toSafeError } from '../errors.js';
 
 const email = z.string().email();
+const primaryRecipient = z.array(email).length(1);
+const subject = z.string().min(1).max(200).refine((value) => !/[\r\n]/.test(value), 'Subject must not contain CR or LF characters.');
 const idempotencyKey = z.string().min(8).max(128).regex(/^[A-Za-z0-9._:-]+$/);
 const result = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] });
 const failure = (error: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify({ error: toSafeError(error) }) }], isError: true });
@@ -92,16 +94,16 @@ export function registerMailTools(
   server.registerTool(
     'send_email',
     {
-      description: 'Send a new CAMPX outreach email. Each creator should normally receive a separate message. Provide a stable idempotency_key when a client may retry the same send.',
+      description: 'Send one new CAMPX outreach email to one primary creator recipient. idempotency_key is required so retried MCP requests cannot duplicate the send.',
       inputSchema: z.object({
-        to: z.array(email).min(1),
-        cc: z.array(email).optional(),
-        bcc: z.array(email).optional(),
-        subject: z.string().min(1),
+        to: primaryRecipient,
+        cc: z.array(email).max(10).optional(),
+        bcc: z.array(email).max(10).optional(),
+        subject,
         text: z.string().min(1),
         html: z.string().optional(),
         reply_to: email.optional(),
-        idempotency_key: idempotencyKey.optional()
+        idempotency_key: idempotencyKey
       }),
       annotations: { readOnlyHint: false, destructiveHint: false }
     },
@@ -116,10 +118,7 @@ export function registerMailTools(
           html: a.html,
           replyTo: a.reply_to
         };
-        const send = () => smtp.send(message);
-        return result(a.idempotency_key
-          ? await idempotency.execute(`send_email:${a.idempotency_key}`, message, send)
-          : await send());
+        return result(await idempotency.execute(`send_email:${a.idempotency_key}`, message, () => smtp.send(message)));
       } catch (e) { return failure(e); }
     }
   );
@@ -127,13 +126,13 @@ export function registerMailTools(
   server.registerTool(
     'reply_email',
     {
-      description: 'Reply to an existing CAMPX email while preserving RFC mail-thread headers. Provide a stable idempotency_key when a client may retry the same reply.',
+      description: 'Reply to an existing CAMPX email while preserving RFC mail-thread headers. idempotency_key is required so retried MCP requests cannot duplicate the reply.',
       inputSchema: z.object({
         message_ref: z.string().min(1),
         text: z.string().min(1),
         html: z.string().optional(),
         reply_all: z.boolean().default(false),
-        idempotency_key: idempotencyKey.optional()
+        idempotency_key: idempotencyKey
       }),
       annotations: { readOnlyHint: false, destructiveHint: false }
     },
@@ -145,42 +144,44 @@ export function registerMailTools(
           html: a.html,
           replyAll: a.reply_all
         };
-        const sendReply = async () => {
+        return result(await idempotency.execute(`reply_email:${a.idempotency_key}`, payload, async () => {
           const parent = await imap.getEmail(a.message_ref);
           return smtp.send(buildReplyMessage(parent, {
             text: a.text,
             html: a.html,
             replyAll: a.reply_all
           }, mailboxAddress));
-        };
-        return result(a.idempotency_key
-          ? await idempotency.execute(`reply_email:${a.idempotency_key}`, payload, sendReply)
-          : await sendReply());
+        }));
       } catch (e) { return failure(e); }
     }
   );
 
+  const batchSchema = z.object({
+    messages: z.array(z.object({
+      to: primaryRecipient,
+      cc: z.array(email).max(10).optional(),
+      bcc: z.array(email).max(10).optional(),
+      subject,
+      text: z.string().min(1),
+      html: z.string().optional()
+    })).min(1).max(25),
+    max: z.number().int().min(1).max(25).optional(),
+    allow_duplicates: z.boolean().default(false),
+    delay_ms: z.number().int().min(0).max(5000).default(250),
+    retry_transient: z.boolean().default(false),
+    retry_delay_ms: z.number().int().min(0).max(10000).default(1000),
+    dry_run: z.boolean().default(false),
+    idempotency_key: idempotencyKey.optional()
+  }).refine((value) => value.dry_run || Boolean(value.idempotency_key), {
+    message: 'idempotency_key is required when dry_run is false.',
+    path: ['idempotency_key']
+  });
+
   server.registerTool(
     'send_email_batch',
     {
-      description: 'Preflight or send separate personalized outreach messages to multiple creators. dry_run validates and previews recipients without sending. For real sends, provide a stable idempotency_key when a client may retry the same batch.',
-      inputSchema: z.object({
-        messages: z.array(z.object({
-          to: z.array(email).min(1),
-          cc: z.array(email).optional(),
-          bcc: z.array(email).optional(),
-          subject: z.string().min(1),
-          text: z.string().min(1),
-          html: z.string().optional()
-        })).min(1).max(25),
-        max: z.number().int().min(1).max(25).optional(),
-        allow_duplicates: z.boolean().default(false),
-        delay_ms: z.number().int().min(0).max(5000).default(250),
-        retry_transient: z.boolean().default(true),
-        retry_delay_ms: z.number().int().min(0).max(10000).default(1000),
-        dry_run: z.boolean().default(false),
-        idempotency_key: idempotencyKey.optional()
-      }),
+      description: 'Preflight or send separate personalized outreach messages to multiple creators. dry_run validates and previews recipients without sending or consuming an idempotency key. Real sends require idempotency_key. Automatic transient retry is disabled by default to avoid ambiguous duplicate delivery.',
+      inputSchema: batchSchema,
       annotations: { readOnlyHint: false, destructiveHint: false }
     },
     async ({ messages, max, allow_duplicates, delay_ms, retry_transient, retry_delay_ms, dry_run, idempotency_key }) => {
@@ -195,10 +196,11 @@ export function registerMailTools(
         if (dry_run) return result(preflightBatch(messages, options));
 
         const payload = { messages, options };
-        const sendBatch = () => executeBatch(messages, (m) => smtp.send(m), options);
-        return result(idempotency_key
-          ? await idempotency.execute(`send_email_batch:${idempotency_key}`, payload, sendBatch)
-          : await sendBatch());
+        return result(await idempotency.execute(
+          `send_email_batch:${idempotency_key!}`,
+          payload,
+          () => executeBatch(messages, (m) => smtp.send(m), options)
+        ));
       } catch (e) { return failure(e); }
     }
   );
