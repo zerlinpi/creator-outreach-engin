@@ -60,9 +60,25 @@ function parseList(value?: string): string[] | undefined {
   return values.length ? values : undefined;
 }
 
+function validateJsonLimit(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  const match = /^(\d+)(kb|mb)$/.exec(normalized);
+  if (!match) {
+    throw new Error('CONNECTOR_JSON_LIMIT must use an integer kb or mb value between 32kb and 2mb.');
+  }
+
+  const amount = Number(match[1]);
+  const bytes = amount * (match[2] === 'mb' ? 1024 * 1024 : 1024);
+  if (!Number.isSafeInteger(bytes) || bytes < 32 * 1024 || bytes > 2 * 1024 * 1024) {
+    throw new Error('CONNECTOR_JSON_LIMIT must be between 32kb and 2mb.');
+  }
+  return normalized;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const parsed = EnvSchema.parse(env);
   const allowedHosts = parseList(parsed.CONNECTOR_ALLOWED_HOSTS);
+  const jsonLimit = validateJsonLimit(parsed.CONNECTOR_JSON_LIMIT);
 
   if (parsed.NODE_ENV === 'production' && !allowedHosts?.length) {
     throw new Error('CONNECTOR_ALLOWED_HOSTS is required in production.');
@@ -83,7 +99,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     fromName: parsed.MAIL_FROM_NAME,
     authToken: parsed.CONNECTOR_AUTH_TOKEN,
     allowedHosts,
-    jsonLimit: parsed.CONNECTOR_JSON_LIMIT,
+    jsonLimit,
     port: parsed.PORT,
     maxMessageBytes: parsed.MAIL_MAX_MESSAGE_BYTES,
     searchSourceBytes: parsed.MAIL_SEARCH_SOURCE_BYTES,

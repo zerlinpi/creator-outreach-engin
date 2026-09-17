@@ -2,7 +2,7 @@ import { ImapFlow } from 'imapflow';
 import type { AppConfig } from '../config.js';
 import { ConnectorError } from '../errors.js';
 import { parseMessage } from './parser.js';
-import { resolveThread } from './threading.js';
+import { normalizeSubject, resolveThread } from './threading.js';
 import { pickMailboxBySpecialUse, resolveMailboxAlias } from './mailboxes.js';
 import type { NormalizedMessage, ThreadResult } from './types.js';
 
@@ -210,7 +210,7 @@ export class ImapMailClient {
 
     if (input.messageRef) {
       const anchor = await this.getEmail(input.messageRef);
-      const subject = normalizeSearchSubject(anchor.subject);
+      const subject = normalizeSubject(anchor.subject);
       const mailboxes = new Set<string>(['INBOX', anchor.mailbox]);
       if (sent) mailboxes.add(sent);
 
@@ -242,8 +242,4 @@ export class ImapMailClient {
     const anchor = [...messages].sort((a, b) => b.date.getTime() - a.date.getTime())[0];
     return resolveThread(messages, anchor);
   }
-}
-
-function normalizeSearchSubject(subject: string): string {
-  return subject.replace(/^(re|fw|fwd)\s*:\s*/ig, '').trim();
 }
