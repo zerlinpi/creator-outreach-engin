@@ -11,6 +11,8 @@ export interface HttpAppDependencies {
   mailboxAddress: string;
   imap: ImapMailClient;
   smtp: SmtpMailClient;
+  allowedHosts?: string[];
+  jsonLimit?: string;
 }
 
 export function createHttpApp(deps: HttpAppDependencies) {
@@ -23,7 +25,11 @@ export function createHttpApp(deps: HttpAppDependencies) {
     return server;
   });
 
-  const app = createMcpExpressApp({ host: '0.0.0.0' });
+  const app = createMcpExpressApp({
+    host: '0.0.0.0',
+    allowedHosts: deps.allowedHosts,
+    jsonLimit: deps.jsonLimit ?? '1mb'
+  });
 
   app.get('/health', (_req, res) => {
     res.status(200).json({ ok: true, service: 'campx-creator-mail' });
