@@ -68,4 +68,12 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...baseEnv, MAIL_CONNECTION_TIMEOUT_MS: '0' })).toThrow();
     expect(() => loadConfig({ ...baseEnv, MAIL_SOCKET_TIMEOUT_MS: '9999999' })).toThrow();
   });
+
+  it('accepts only bounded JSON request limits between 32 KiB and 2 MiB', () => {
+    expect(loadConfig({ ...baseEnv, CONNECTOR_JSON_LIMIT: '32kb' }).jsonLimit).toBe('32kb');
+    expect(loadConfig({ ...baseEnv, CONNECTOR_JSON_LIMIT: '2mb' }).jsonLimit).toBe('2mb');
+    expect(() => loadConfig({ ...baseEnv, CONNECTOR_JSON_LIMIT: '31kb' })).toThrow();
+    expect(() => loadConfig({ ...baseEnv, CONNECTOR_JSON_LIMIT: '100mb' })).toThrow();
+    expect(() => loadConfig({ ...baseEnv, CONNECTOR_JSON_LIMIT: 'unlimited' })).toThrow();
+  });
 });
