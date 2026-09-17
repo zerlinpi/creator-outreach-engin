@@ -14,6 +14,8 @@ interface MailTransport {
   verify?(): Promise<boolean>;
 }
 
+const MAX_ENVELOPE_RECIPIENTS = 21;
+
 export function buildSmtpTransportOptions(config: AppConfig) {
   return {
     host: config.smtp.host,
@@ -29,6 +31,16 @@ export function buildSmtpTransportOptions(config: AppConfig) {
 function optionalAddresses(values?: string[]): string[] | undefined {
   if (!values?.length) return undefined;
   return validateAddressList(values);
+}
+
+function enforceEnvelopeRecipientLimit(to: string[], cc?: string[], bcc?: string[]): void {
+  const recipients = new Set([...to, ...(cc ?? []), ...(bcc ?? [])]);
+  if (recipients.size > MAX_ENVELOPE_RECIPIENTS) {
+    throw new ConnectorError(
+      'RATE_LIMITED',
+      `Message has too many unique recipients (max ${MAX_ENVELOPE_RECIPIENTS}).`
+    );
+  }
 }
 
 function classifySmtpError(error: unknown): ConnectorError {
@@ -73,6 +85,7 @@ export class SmtpMailClient {
     const cc = optionalAddresses(message.cc);
     const bcc = optionalAddresses(message.bcc);
     const replyTo = message.replyTo ? validateAddressList([message.replyTo])[0] : undefined;
+    enforceEnvelopeRecipientLimit(to, cc, bcc);
 
     try {
       const info = await this.transport.sendMail({
