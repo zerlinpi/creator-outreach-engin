@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildReplyMessage } from '../../src/mail/reply.js';
 import type { NormalizedMessage } from '../../src/mail/types.js';
 
-const parent: NormalizedMessage = { id: 'INBOX:1', mailbox: 'INBOX', uid: 1, from: ['creator@example.com'], to: ['campx@example.com'], cc: ['manager@example.com'], subject: 'CAMPX collaboration', date: new Date(), text: 'hello', html: null, messageId: '<parent@example.com>', inReplyTo: null, references: ['<root@example.com>'], attachments: [] };
+const parent: NormalizedMessage = { id: 'INBOX:1', mailbox: 'INBOX', uid: 1, from: ['creator@example.com'], replyTo: [], to: ['campx@example.com'], cc: ['manager@example.com'], subject: 'CAMPX collaboration', date: new Date(), text: 'hello', html: null, messageId: '<parent@example.com>', inReplyTo: null, references: ['<root@example.com>'], attachments: [] };
 
 describe('buildReplyMessage', () => {
   it('replies to sender and keeps RFC thread headers', () => {
@@ -11,6 +11,15 @@ describe('buildReplyMessage', () => {
     expect(result.subject).toBe('Re: CAMPX collaboration');
     expect(result.inReplyTo).toBe('<parent@example.com>');
     expect(result.references).toEqual(['<root@example.com>', '<parent@example.com>']);
+  });
+
+  it('honors Reply-To when the sender directs replies to a different address', () => {
+    const message: NormalizedMessage = {
+      ...parent,
+      replyTo: ['partnerships@agency.example']
+    };
+    const result = buildReplyMessage(message, { text: 'Thanks' }, 'campx@example.com');
+    expect(result.to).toEqual(['partnerships@agency.example']);
   });
 
   it('reply-all excludes the mailbox itself and keeps other recipients', () => {
