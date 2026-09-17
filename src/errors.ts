@@ -9,6 +9,7 @@ export type ConnectorErrorCode =
   | 'RECIPIENT_REJECTED'
   | 'RATE_LIMITED'
   | 'TRANSIENT_MAIL_ERROR'
+  | 'IDEMPOTENCY_CONFLICT'
   | 'INTERNAL_ERROR';
 
 export interface SafeToolError {
