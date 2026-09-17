@@ -57,7 +57,21 @@ describe('batch safety', () => {
     expect(result[1]).toMatchObject({ ok: true, index: 1, to: ['b@example.com'], subject: 'B' });
   });
 
-  it('retries one transient failure and then succeeds', async () => {
+  it('does not retry a transient failure unless retryTransient is explicitly enabled', async () => {
+    let attempts = 0;
+    const result = await executeBatch(
+      [msg('a@example.com')],
+      async () => {
+        attempts += 1;
+        throw new ConnectorError('TRANSIENT_MAIL_ERROR', 'Ambiguous SMTP failure.');
+      },
+      { delayMs: 0, sleep: async () => undefined }
+    );
+    expect(attempts).toBe(1);
+    expect(result[0]).toMatchObject({ ok: false, attempts: 1 });
+  });
+
+  it('retries one transient failure only when explicitly enabled', async () => {
     let attempts = 0;
     const sleeps: number[] = [];
     const result = await executeBatch(
@@ -86,6 +100,25 @@ describe('batch safety', () => {
     );
     expect(attempts).toBe(1);
     expect(result[0]).toMatchObject({ ok: false, to: ['a@example.com'] });
+  });
+
+  it('rejects a batch whose worst-case configured wait exceeds 60 seconds before sending anything', async () => {
+    let attempts = 0;
+    await expect(executeBatch(
+      Array.from({ length: 25 }, (_, i) => msg(`u${i}@example.com`)),
+      async (message) => {
+        attempts += 1;
+        return { accepted: message.to, rejected: [], messageId: `<${message.to[0]}>` };
+      },
+      {
+        max: 25,
+        delayMs: 5000,
+        retryTransient: true,
+        retryDelayMs: 10000,
+        sleep: async () => undefined
+      }
+    )).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+    expect(attempts).toBe(0);
   });
 
   it('throttles between separate creator messages', async () => {
