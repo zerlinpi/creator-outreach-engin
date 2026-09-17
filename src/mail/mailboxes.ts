@@ -16,3 +16,20 @@ export function pickMailboxBySpecialUse(
   const fallback = mailboxes.find((box) => fallbackSet.has(box.path.trim().toLowerCase()));
   return fallback?.path ?? null;
 }
+
+export function resolveMailboxAlias(requested: string | undefined, mailboxes: MailboxDescriptor[]): string {
+  const value = requested?.trim() || 'INBOX';
+  const upper = value.toUpperCase();
+
+  if (upper === 'INBOX' || upper === '\\INBOX') {
+    return pickMailboxBySpecialUse(mailboxes, '\\Inbox', ['INBOX']) ?? 'INBOX';
+  }
+
+  if (upper === 'SENT' || upper === '\\SENT') {
+    const sent = pickMailboxBySpecialUse(mailboxes, '\\Sent', ['Sent', 'Sent Messages', '已发送', '已发送邮件']);
+    if (!sent) throw new Error('Sent mailbox was not found.');
+    return sent;
+  }
+
+  return value;
+}
