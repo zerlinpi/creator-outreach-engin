@@ -38,16 +38,21 @@ const config: AppConfig = {
 };
 
 describe('stable IMAP message references', () => {
-  it('round-trips mailbox and UID without exposing credentials', () => {
-    const ref = encodeMessageRef('INBOX/Creators', 1234);
+  it('round-trips mailbox, UID, and UIDVALIDITY without exposing mailbox names', () => {
+    const ref = encodeMessageRef('INBOX/Creators', 1234, 987654321n);
     expect(ref).not.toContain('INBOX/Creators');
-    expect(decodeMessageRef(ref)).toEqual({ mailbox: 'INBOX/Creators', uid: 1234 });
+    expect(decodeMessageRef(ref)).toEqual({ mailbox: 'INBOX/Creators', uid: 1234, uidValidity: '987654321' });
   });
 
-  it('rejects malformed references as MESSAGE_NOT_FOUND', () => {
+  it('rejects legacy or malformed references that are not bound to UIDVALIDITY', () => {
+    const legacy = Buffer.from(JSON.stringify({ mailbox: 'INBOX', uid: 1 }), 'utf8').toString('base64url');
+    expect(() => decodeMessageRef(legacy)).toThrowError(ConnectorError);
     expect(() => decodeMessageRef('not-a-valid-ref')).toThrowError(ConnectorError);
-    try { decodeMessageRef('not-a-valid-ref'); } catch (error) {
-      expect((error as ConnectorError).code).toBe('MESSAGE_NOT_FOUND');
+
+    for (const ref of [legacy, 'not-a-valid-ref']) {
+      try { decodeMessageRef(ref); } catch (error) {
+        expect((error as ConnectorError).code).toBe('MESSAGE_NOT_FOUND');
+      }
     }
   });
 });
