@@ -31,6 +31,24 @@ export function buildImapClientOptions(config: AppConfig) {
   };
 }
 
+export function buildSearchFetchQuery(config: AppConfig) {
+  return {
+    uid: true,
+    source: { start: 0, maxLength: config.searchSourceBytes },
+    size: true,
+    flags: true
+  };
+}
+
+export function buildFullMessageFetchQuery(config: AppConfig) {
+  return {
+    uid: true,
+    source: { start: 0, maxLength: config.maxMessageBytes + 1 },
+    size: true,
+    flags: true
+  };
+}
+
 export function enforceMessageSize(size: number, maxBytes: number): void {
   if (size > maxBytes) {
     throw new ConnectorError('MESSAGE_TOO_LARGE', `Message exceeds the configured ${maxBytes}-byte limit.`);
@@ -135,13 +153,13 @@ export class ImapMailClient {
       if (selected.length === 0) return [];
 
       const out: NormalizedMessage[] = [];
-      for await (const item of client.fetch(selected, { uid: true, source: true, flags: true }, { uid: true })) {
+      for await (const item of client.fetch(selected, buildSearchFetchQuery(this.config), { uid: true })) {
         if (!item.source) continue;
         const uid = item.uid;
-        const truncated = item.source.length > this.config.searchSourceBytes;
-        const source = truncated ? item.source.subarray(0, this.config.searchSourceBytes) : item.source;
+        const fullSize = typeof item.size === 'number' ? item.size : item.source.length;
+        const truncated = fullSize > item.source.length;
         out.push({
-          ...(await parseMessage(source, {
+          ...(await parseMessage(item.source, {
             id: encodeMessageRef(mailbox, uid),
             mailbox,
             uid,
@@ -159,9 +177,10 @@ export class ImapMailClient {
     const { mailbox, uid } = decodeMessageRef(ref);
     return this.withClient(async (client) => {
       await client.mailboxOpen(mailbox);
-      for await (const item of client.fetch([uid], { uid: true, source: true, flags: true }, { uid: true })) {
+      for await (const item of client.fetch([uid], buildFullMessageFetchQuery(this.config), { uid: true })) {
         if (item.source) {
-          enforceMessageSize(item.source.length, this.config.maxMessageBytes);
+          const fullSize = typeof item.size === 'number' ? item.size : item.source.length;
+          enforceMessageSize(Math.max(fullSize, item.source.length), this.config.maxMessageBytes);
           return parseMessage(item.source, {
             id: ref,
             mailbox,
