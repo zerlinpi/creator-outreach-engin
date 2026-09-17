@@ -2,7 +2,7 @@ import nodemailer from 'nodemailer';
 import type { SendMailOptions } from 'nodemailer';
 import type { AppConfig } from '../config.js';
 import { ConnectorError } from '../errors.js';
-import { validateAddressList } from './addresses.js';
+import { normalizeAddress, validateAddressList } from './addresses.js';
 import type { OutgoingMessage, SendResult } from './types.js';
 
 interface MailTransport {
@@ -103,8 +103,11 @@ export class SmtpMailClient {
 
       const accepted = info.accepted.map(String);
       const rejected = info.rejected.map(String);
-      if (accepted.length === 0 && rejected.length > 0) {
-        throw new ConnectorError('RECIPIENT_REJECTED', 'Mail provider rejected all recipients.');
+      const acceptedAddresses = new Set(accepted.map(normalizeAddress));
+      const missingPrimary = to.filter((address) => !acceptedAddresses.has(address));
+
+      if (missingPrimary.length > 0) {
+        throw new ConnectorError('RECIPIENT_REJECTED', 'Mail provider did not accept the primary recipient.');
       }
 
       return {
