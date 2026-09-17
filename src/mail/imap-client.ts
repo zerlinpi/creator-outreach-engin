@@ -51,8 +51,10 @@ export class ImapMailClient {
       if (criteria.unread !== undefined) query.seen = !criteria.unread;
       if (criteria.since) query.since = criteria.since;
       if (criteria.before) query.before = criteria.before;
-      const uids = await client.search(query, { uid: true });
+      const found = await client.search(query, { uid: true });
+      const uids = found || [];
       const selected = uids.slice(-limit).reverse();
+      if (selected.length === 0) return [];
       const out: NormalizedMessage[] = [];
       for await (const item of client.fetch(selected, { uid: true, source: true, flags: true }, { uid: true })) {
         if (!item.source) continue;
