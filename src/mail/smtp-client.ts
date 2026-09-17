@@ -29,11 +29,19 @@ function optionalAddresses(values?: string[]): string[] | undefined {
 
 function classifySmtpError(error: unknown): ConnectorError {
   const value = error as { code?: string; responseCode?: number } | undefined;
+  const transientCodes = new Set(['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'ESOCKET', 'ENETUNREACH']);
+
   if (value?.code === 'EAUTH' || value?.responseCode === 535 || value?.responseCode === 526) {
     return new ConnectorError('AUTH_FAILED', 'Mailbox authentication failed.', { cause: error });
   }
-  if (value?.responseCode === 429 || value?.responseCode === 421 || value?.responseCode === 450 || value?.responseCode === 451 || value?.responseCode === 452) {
-    return new ConnectorError('RATE_LIMITED', 'Mail provider temporarily refused the message.', { cause: error });
+  if (value?.responseCode === 429 || value?.responseCode === 421) {
+    return new ConnectorError('RATE_LIMITED', 'Mail provider temporarily rate-limited or deferred the message.', { cause: error });
+  }
+  if (value?.responseCode === 450 || value?.responseCode === 451 || value?.responseCode === 452 || (value?.code && transientCodes.has(value.code))) {
+    return new ConnectorError('TRANSIENT_MAIL_ERROR', 'Temporary mail transport failure.', { cause: error });
+  }
+  if (value?.responseCode && value.responseCode >= 550 && value.responseCode < 560) {
+    return new ConnectorError('RECIPIENT_REJECTED', 'Mail provider permanently rejected the recipient or message.', { cause: error });
   }
   return new ConnectorError('SMTP_UNAVAILABLE', 'Message could not be sent.', { cause: error });
 }
@@ -65,12 +73,19 @@ export class SmtpMailClient {
         references: message.references
       });
 
+      const accepted = info.accepted.map(String);
+      const rejected = info.rejected.map(String);
+      if (accepted.length === 0 && rejected.length > 0) {
+        throw new ConnectorError('RECIPIENT_REJECTED', 'Mail provider rejected all recipients.');
+      }
+
       return {
-        accepted: info.accepted.map(String),
-        rejected: info.rejected.map(String),
+        accepted,
+        rejected,
         messageId: info.messageId
       };
     } catch (error) {
+      if (error instanceof ConnectorError) throw error;
       throw classifySmtpError(error);
     }
   }
