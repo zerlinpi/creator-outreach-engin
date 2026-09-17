@@ -116,6 +116,32 @@ The doctor does **not** send an email. It verifies that:
 
 It prints only safe status data such as mailbox count and the resolved Sent folder. Passwords and raw provider errors are intentionally not included. A non-zero process exit code means deployment should not proceed until the failing check is fixed.
 
+## Opt-in live integration tests
+
+The normal CI suite never logs into CAMPX production mail and never sends live email. Two opt-in integration tests are included for an **owned, non-production test mailbox**.
+
+IMAP verification requires:
+
+```bash
+TEST_MAIL_USERNAME=test-mailbox@example.com \
+TEST_MAIL_APP_PASSWORD=... \
+npm run test:integration
+```
+
+This verifies TLS login, folder listing, Inbox search, and message fetch when a message exists.
+
+SMTP live sending requires an additional owned recipient and an explicit send switch:
+
+```bash
+TEST_MAIL_USERNAME=test-mailbox@example.com \
+TEST_MAIL_APP_PASSWORD=... \
+TEST_MAIL_RECIPIENT=owned-test-inbox@example.com \
+TEST_MAIL_LIVE_SEND=true \
+npm run test:integration
+```
+
+Optional provider overrides are available as `TEST_MAIL_IMAP_HOST`, `TEST_MAIL_IMAP_PORT`, `TEST_MAIL_SMTP_HOST`, and `TEST_MAIL_SMTP_PORT`. Do not point these tests at the CAMPX production mailbox in CI.
+
 ## Typical ChatGPT prompts
 
 - `查一下 Happily Ever Hanks 最近有没有回复 CAMPX。`
@@ -149,16 +175,18 @@ Write/modify MCP actions such as `send_email`, `reply_email`, and `send_email_ba
 Before contacting creators, use an owned test inbox and verify the complete loop:
 
 1. Run `npm run doctor` and confirm all checks pass.
-2. `search_emails` can find a test message.
-3. `get_email` returns the expected text and headers.
-4. `send_email` arrives at the owned test inbox.
-5. Reply from the owned inbox.
-6. `get_thread` shows inbound and outbound messages together.
-7. `reply_email` remains in the same normal mail-client thread.
-8. `send_email_batch` sends separate messages to multiple owned inboxes.
-9. Confirm the batch result identifies each creator independently.
-10. Simulate or observe one temporary SMTP/network failure and confirm only one bounded retry occurs.
-11. Confirm SMTP client messages appear in Alibaba Mail Sent.
+2. Run the opt-in IMAP integration test with a non-production mailbox.
+3. Run the opt-in SMTP integration test only with an owned recipient and `TEST_MAIL_LIVE_SEND=true`.
+4. `search_emails` can find a test message.
+5. `get_email` returns the expected text and headers.
+6. `send_email` arrives at the owned test inbox.
+7. Reply from the owned inbox.
+8. `get_thread` shows inbound and outbound messages together.
+9. `reply_email` remains in the same normal mail-client thread.
+10. `send_email_batch` sends separate messages to multiple owned inboxes.
+11. Confirm the batch result identifies each creator independently.
+12. Simulate or observe one temporary SMTP/network failure and confirm only one bounded retry occurs.
+13. Confirm SMTP client messages appear in Alibaba Mail Sent.
 
 ## Safety and behavior
 
@@ -170,6 +198,6 @@ Before contacting creators, use an owned test inbox and verify the complete loop
 - Duplicate recipient + subject pairs are rejected by default within one batch.
 - Batch sends are sequential and throttled rather than fired concurrently.
 - Temporary SMTP/network failures can receive one bounded retry; permanent recipient failures are not retried.
-- Replies preserve `Message-ID`, `In-Reply-To`, and `References` when available.
+- Replies honor `Reply-To` when present and preserve `Message-ID`, `In-Reply-To`, and `References` when available.
 - Replying from a previously sent CAMPX message correctly targets the original creator recipients.
 - The connector is intentionally not a newsletter sender, CRM, or autonomous negotiation agent.
