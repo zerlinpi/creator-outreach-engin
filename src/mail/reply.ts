@@ -6,10 +6,18 @@ export interface ReplyInput { text: string; html?: string; replyAll?: boolean }
 
 export function buildReplyMessage(parent: NormalizedMessage, input: ReplyInput, mailboxAddress: string): OutgoingMessage {
   const self = normalizeAddress(mailboxAddress);
-  const to = validateAddressList(parent.from.filter((a) => normalizeAddress(a) !== self));
+  const externalSenders = parent.from.map(normalizeAddress).filter((address) => address !== self);
+  const originalRecipients = parent.to.map(normalizeAddress).filter((address) => address !== self);
+  const to = validateAddressList(externalSenders.length ? externalSenders : originalRecipients);
+
   const cc = input.replyAll
-    ? [...new Set([...parent.to, ...parent.cc].map(normalizeAddress).filter((a) => a !== self && !to.includes(a)))]
+    ? [...new Set(
+        [...parent.to, ...parent.cc]
+          .map(normalizeAddress)
+          .filter((address) => address !== self && !to.includes(address))
+      )]
     : [];
+
   const headers = buildReplyHeaders(parent);
   return {
     to,
