@@ -11,6 +11,7 @@ interface MailTransport {
     rejected: unknown[];
     messageId: string;
   }>;
+  verify?(): Promise<boolean>;
 }
 
 export function buildSmtpTransportOptions(config: AppConfig) {
@@ -51,6 +52,17 @@ export class SmtpMailClient {
 
   constructor(private readonly config: AppConfig, transport?: MailTransport) {
     this.transport = transport ?? (nodemailer.createTransport(buildSmtpTransportOptions(config)) as MailTransport);
+  }
+
+  async verifyConnection(): Promise<boolean> {
+    if (!this.transport.verify) {
+      throw new ConnectorError('SMTP_UNAVAILABLE', 'SMTP connection verification is unavailable.');
+    }
+    try {
+      return await this.transport.verify();
+    } catch (error) {
+      throw classifySmtpError(error);
+    }
   }
 
   async send(message: OutgoingMessage): Promise<SendResult> {
