@@ -10,7 +10,9 @@ const app = createHttpApp({
   authToken: config.authToken,
   mailboxAddress: config.username,
   imap,
-  smtp
+  smtp,
+  allowedHosts: config.allowedHosts,
+  jsonLimit: config.jsonLimit
 });
 
 app.listen(config.port, '0.0.0.0', () => {
