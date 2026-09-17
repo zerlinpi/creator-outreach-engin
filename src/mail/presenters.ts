@@ -12,6 +12,7 @@ export interface SearchEmailSummary {
   hasAttachments: boolean;
   messageId: string | null;
   externalContent: true;
+  truncated: boolean;
 }
 
 export interface EmailView {
@@ -31,6 +32,7 @@ export interface EmailView {
   attachments: AttachmentMeta[];
   unread: boolean;
   externalContent: true;
+  truncated: boolean;
   html?: string;
 }
 
@@ -64,7 +66,8 @@ export function toSearchSummary(message: NormalizedMessage): SearchEmailSummary 
     preview: preview(message.text),
     hasAttachments: message.attachments.length > 0,
     messageId: message.messageId,
-    externalContent: true
+    externalContent: true,
+    truncated: message.truncated ?? false
   };
 }
 
@@ -85,7 +88,8 @@ export function toEmailView(message: NormalizedMessage, includeHtml = false): Em
     references: message.references,
     attachments: message.attachments,
     unread: message.unread ?? false,
-    externalContent: true
+    externalContent: true,
+    truncated: message.truncated ?? false
   };
 
   if (includeHtml && message.html) view.html = sanitizeHtmlForTool(message.html);
