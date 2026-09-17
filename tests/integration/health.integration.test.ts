@@ -13,6 +13,7 @@ describe('health endpoint', () => {
     const app = createHttpApp({
       authToken: '1234567890abcdef',
       mailboxAddress: 'campx@example.com',
+      allowedHosts: ['127.0.0.1'],
       imap: {} as never,
       smtp: {} as never
     });
