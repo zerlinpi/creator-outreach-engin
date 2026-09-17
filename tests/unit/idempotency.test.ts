@@ -69,14 +69,29 @@ describe('IdempotencyStore', () => {
     await expect(store.execute('send:ttl', { subject: 'A' }, async () => ++calls)).resolves.toBe(2);
   });
 
-  it('bounds memory and evicts the oldest completed entry when capacity is reached', async () => {
+  it('fails closed at capacity instead of evicting an unexpired idempotency record', async () => {
     let calls = 0;
     const store = new IdempotencyStore({ ttlMs: 60_000, maxEntries: 2 });
 
+    await expect(store.execute('k1', { n: 1 }, async () => ++calls)).resolves.toBe(1);
+    await expect(store.execute('k2', { n: 2 }, async () => ++calls)).resolves.toBe(2);
+    await expect(store.execute('k3', { n: 3 }, async () => ++calls)).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+
+    await expect(store.execute('k1', { n: 1 }, async () => ++calls)).resolves.toBe(1);
+    expect(calls).toBe(2);
+    expect(store.size).toBe(2);
+  });
+
+  it('accepts a new key after TTL expiry frees capacity', async () => {
+    let now = 1_000;
+    let calls = 0;
+    const store = new IdempotencyStore({ ttlMs: 500, maxEntries: 2, now: () => now });
+
     await store.execute('k1', { n: 1 }, async () => ++calls);
     await store.execute('k2', { n: 2 }, async () => ++calls);
-    await store.execute('k3', { n: 3 }, async () => ++calls);
-    await expect(store.execute('k1', { n: 1 }, async () => ++calls)).resolves.toBe(4);
-    expect(store.size).toBeLessThanOrEqual(2);
+    now += 501;
+
+    await expect(store.execute('k3', { n: 3 }, async () => ++calls)).resolves.toBe(3);
+    expect(store.size).toBe(1);
   });
 });

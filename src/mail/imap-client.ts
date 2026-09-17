@@ -55,15 +55,23 @@ export function enforceMessageSize(size: number, maxBytes: number): void {
   }
 }
 
-export function encodeMessageRef(mailbox: string, uid: number): string {
-  return Buffer.from(JSON.stringify({ mailbox, uid }), 'utf8').toString('base64url');
+export function encodeMessageRef(mailbox: string, uid: number, uidValidity: bigint | string | number): string {
+  return Buffer.from(JSON.stringify({ mailbox, uid, uidValidity: String(uidValidity) }), 'utf8').toString('base64url');
 }
 
-export function decodeMessageRef(ref: string): { mailbox: string; uid: number } {
+export function decodeMessageRef(ref: string): { mailbox: string; uid: number; uidValidity: string } {
   try {
     const value = JSON.parse(Buffer.from(ref, 'base64url').toString('utf8'));
-    if (typeof value.mailbox !== 'string' || !Number.isInteger(value.uid) || value.uid < 1) throw new Error('bad ref');
-    return value;
+    if (
+      typeof value.mailbox !== 'string' ||
+      !Number.isInteger(value.uid) ||
+      value.uid < 1 ||
+      typeof value.uidValidity !== 'string' ||
+      !/^\d+$/.test(value.uidValidity)
+    ) {
+      throw new Error('bad ref');
+    }
+    return { mailbox: value.mailbox, uid: value.uid, uidValidity: value.uidValidity };
   } catch {
     throw new ConnectorError('MESSAGE_NOT_FOUND', 'Invalid message reference.');
   }
@@ -137,7 +145,8 @@ export class ImapMailClient {
     const limit = Math.max(1, Math.min(criteria.limit ?? 20, 100));
 
     return this.withClient(async (client) => {
-      await client.mailboxOpen(mailbox);
+      const opened = await client.mailboxOpen(mailbox);
+      const uidValidity = opened.uidValidity;
       const query: Record<string, unknown> = {};
       if (criteria.from) query.from = criteria.from;
       if (criteria.to) query.to = criteria.to;
@@ -160,7 +169,7 @@ export class ImapMailClient {
         const truncated = fullSize > item.source.length;
         out.push({
           ...(await parseMessage(item.source, {
-            id: encodeMessageRef(mailbox, uid),
+            id: encodeMessageRef(mailbox, uid, uidValidity),
             mailbox,
             uid,
             unread: !item.flags?.has('\\Seen')
@@ -174,9 +183,12 @@ export class ImapMailClient {
   }
 
   async getEmail(ref: string): Promise<NormalizedMessage> {
-    const { mailbox, uid } = decodeMessageRef(ref);
+    const { mailbox, uid, uidValidity } = decodeMessageRef(ref);
     return this.withClient(async (client) => {
-      await client.mailboxOpen(mailbox);
+      const opened = await client.mailboxOpen(mailbox);
+      if (String(opened.uidValidity) !== uidValidity) {
+        throw new ConnectorError('MESSAGE_NOT_FOUND', 'Message reference is stale because the mailbox identity changed.');
+      }
       for await (const item of client.fetch([uid], buildFullMessageFetchQuery(this.config), { uid: true })) {
         if (item.source) {
           const fullSize = typeof item.size === 'number' ? item.size : item.source.length;
