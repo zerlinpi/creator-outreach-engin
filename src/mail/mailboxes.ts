@@ -1,3 +1,5 @@
+import { ConnectorError } from '../errors.js';
+
 export interface MailboxDescriptor {
   path: string;
   specialUse: string | null;
@@ -27,7 +29,7 @@ export function resolveMailboxAlias(requested: string | undefined, mailboxes: Ma
 
   if (upper === 'SENT' || upper === '\\SENT') {
     const sent = pickMailboxBySpecialUse(mailboxes, '\\Sent', ['Sent', 'Sent Messages', '已发送', '已发送邮件']);
-    if (!sent) throw new Error('Sent mailbox was not found.');
+    if (!sent) throw new ConnectorError('MAILBOX_NOT_FOUND', 'Sent mailbox was not found.');
     return sent;
   }
 
