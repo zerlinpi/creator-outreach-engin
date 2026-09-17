@@ -7,6 +7,7 @@ const message: NormalizedMessage = {
   mailbox: 'INBOX',
   uid: 10,
   from: ['creator@example.com'],
+  replyTo: ['partnerships@agency.example'],
   to: ['campx@example.com'],
   cc: [],
   subject: 'CAMPX partnership',
@@ -29,12 +30,14 @@ describe('mail tool presenters', () => {
     expect(summary).not.toHaveProperty('text');
   });
 
-  it('omits HTML by default and sanitizes it when explicitly requested', () => {
+  it('exposes reply routing, omits HTML by default, and sanitizes HTML when explicitly requested', () => {
     const plain = toEmailView(message, false);
+    expect(plain.replyTo).toEqual(['partnerships@agency.example']);
     expect(plain).not.toHaveProperty('html');
     expect(plain.externalContent).toBe(true);
 
     const withHtml = toEmailView(message, true);
+    expect(withHtml.replyTo).toEqual(['partnerships@agency.example']);
     expect(withHtml.html).toContain('<p>Hello</p>');
     expect(withHtml.html).not.toContain('<script');
     expect(withHtml.html).not.toContain('onclick=');
