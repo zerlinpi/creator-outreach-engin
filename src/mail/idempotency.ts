@@ -45,8 +45,8 @@ export class IdempotencyStore {
     this.maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
     this.now = options.now ?? Date.now;
 
-    if (!Number.isInteger(this.ttlMs) || this.ttlMs < 1_000 || this.ttlMs > 24 * 60 * 60 * 1000) {
-      throw new ConnectorError('RATE_LIMITED', 'Idempotency TTL must be between 1000 ms and 24 hours.');
+    if (!Number.isInteger(this.ttlMs) || this.ttlMs < 1 || this.ttlMs > 24 * 60 * 60 * 1000) {
+      throw new ConnectorError('RATE_LIMITED', 'Idempotency TTL must be a positive integer no greater than 24 hours.');
     }
     if (!Number.isInteger(this.maxEntries) || this.maxEntries < 1 || this.maxEntries > 10_000) {
       throw new ConnectorError('RATE_LIMITED', 'Idempotency capacity must be between 1 and 10000 entries.');
@@ -58,36 +58,58 @@ export class IdempotencyStore {
     return this.entries.size;
   }
 
-  async execute<T>(key: string, payload: unknown, operation: () => Promise<T>): Promise<T> {
+  execute<T>(key: string, payload: unknown, operation: () => Promise<T>): Promise<T> {
     this.pruneExpired();
     const digest = fingerprint(payload);
     const existing = this.entries.get(key);
 
     if (existing) {
       if (existing.fingerprint !== digest) {
-        throw new ConnectorError('IDEMPOTENCY_CONFLICT', 'The idempotency key was already used for a different request.');
+        return Promise.reject(new ConnectorError('IDEMPOTENCY_CONFLICT', 'The idempotency key was already used for a different request.'));
       }
       return existing.promise as Promise<T>;
     }
 
     this.makeRoom();
 
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: unknown) => void;
+    const shared = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
     const entry: Entry<T> = {
       fingerprint: digest,
       settled: false,
       expiresAt: Number.POSITIVE_INFINITY,
-      promise: Promise.resolve(undefined as T)
+      promise: shared
     };
 
-    entry.promise = Promise.resolve()
-      .then(operation)
-      .finally(() => {
-        entry.settled = true;
-        entry.expiresAt = this.now() + this.ttlMs;
-      });
-
     this.entries.set(key, entry);
-    return entry.promise;
+
+    const settle = () => {
+      entry.settled = true;
+      entry.expiresAt = this.now() + this.ttlMs;
+    };
+
+    try {
+      const operationResult = operation();
+      void Promise.resolve(operationResult).then(
+        (value) => {
+          settle();
+          resolve(value);
+        },
+        (error) => {
+          settle();
+          reject(error);
+        }
+      );
+    } catch (error) {
+      settle();
+      reject(error);
+    }
+
+    return shared;
   }
 
   private pruneExpired(): void {
