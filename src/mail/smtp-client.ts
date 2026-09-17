@@ -19,7 +19,10 @@ export function buildSmtpTransportOptions(config: AppConfig) {
     host: config.smtp.host,
     port: config.smtp.port,
     secure: true,
-    auth: { user: config.username, pass: config.appPassword }
+    auth: { user: config.username, pass: config.appPassword },
+    connectionTimeout: config.smtp.connectionTimeout,
+    greetingTimeout: config.smtp.greetingTimeout,
+    socketTimeout: config.smtp.socketTimeout
   };
 }
 
