@@ -70,7 +70,12 @@ export class IdempotencyStore {
       return existing.promise as Promise<T>;
     }
 
-    this.ensureCapacity();
+    if (this.entries.size >= this.maxEntries) {
+      return Promise.reject(new ConnectorError(
+        'RATE_LIMITED',
+        'Idempotency capacity is temporarily full; retry after existing protection windows expire.'
+      ));
+    }
 
     let resolve!: (value: T | PromiseLike<T>) => void;
     let reject!: (reason?: unknown) => void;
@@ -116,15 +121,6 @@ export class IdempotencyStore {
     const now = this.now();
     for (const [key, entry] of this.entries) {
       if (entry.settled && entry.expiresAt <= now) this.entries.delete(key);
-    }
-  }
-
-  private ensureCapacity(): void {
-    if (this.entries.size >= this.maxEntries) {
-      throw new ConnectorError(
-        'RATE_LIMITED',
-        'Idempotency capacity is temporarily full; retry after existing protection windows expire.'
-      );
     }
   }
 }
