@@ -54,6 +54,26 @@ describe('SMTP adapter', () => {
     expect(result).toEqual({ accepted: ['creator@example.com'], rejected: ['bad@example.com'], messageId: '<sent@example.com>' });
   });
 
+  it('rejects an oversized recipient envelope before contacting SMTP', async () => {
+    let sends = 0;
+    const transport = {
+      async sendMail() {
+        sends += 1;
+        return { accepted: [], rejected: [], messageId: '<should-not-send@example.com>' };
+      }
+    };
+    const client = new SmtpMailClient(config, transport);
+    const cc = Array.from({ length: 21 }, (_, index) => `cc${index}@example.com`);
+
+    await expect(client.send({
+      to: ['creator@example.com'],
+      cc,
+      subject: 'CAMPX',
+      text: 'Hello'
+    })).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+    expect(sends).toBe(0);
+  });
+
   it('classifies temporary network transport errors as transient', async () => {
     const transport = {
       async sendMail(): Promise<never> {
