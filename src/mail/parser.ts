@@ -14,6 +14,7 @@ export async function parseMessage(source: Buffer | string, meta: { id: string; 
     mailbox: meta.mailbox,
     uid: meta.uid,
     from: addresses(parsed.from),
+    replyTo: addresses(parsed.replyTo),
     to: addresses(parsed.to && !Array.isArray(parsed.to) ? parsed.to : undefined),
     cc: addresses(parsed.cc && !Array.isArray(parsed.cc) ? parsed.cc : undefined),
     subject: parsed.subject ?? '',
