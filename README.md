@@ -52,10 +52,10 @@ CONNECTOR_ALLOWED_HOSTS=localhost,127.0.0.1
 Production example:
 
 ```env
-CONNECTOR_ALLOWED_HOSTS=mail-mcp.example.com
+CONNECTOR_ALLOWED_HOSTS=mail-mcp.example.com,127.0.0.1
 ```
 
-Do not include schemes or ports. Add every hostname your reverse proxy or deployment platform legitimately uses.
+Do not include schemes or ports. Add every hostname your reverse proxy or deployment platform legitimately uses. Keep `127.0.0.1` when using the included Docker `HEALTHCHECK`, because the container checks `/health` through the loopback host.
 
 `CONNECTOR_JSON_LIMIT` defaults to `1mb`, enough for normal creator outreach and batch requests while still placing a bound on MCP request bodies.
 
@@ -105,7 +105,7 @@ Deploy as a Node.js 22 service or Docker container with outbound TCP access to:
 
 Inject secrets using the hosting platform's secret manager. Never bake `.env` into the image.
 
-The public MCP endpoint must be HTTPS for ChatGPT. Configure `CONNECTOR_ALLOWED_HOSTS` with the deployed hostname before enabling the connector.
+The public MCP endpoint must be HTTPS for ChatGPT. Configure `CONNECTOR_ALLOWED_HOSTS` with the deployed hostname plus any legitimate proxy/health-check hosts before enabling the connector.
 
 ## Connect to ChatGPT
 
