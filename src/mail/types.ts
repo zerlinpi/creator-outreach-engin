@@ -11,6 +11,7 @@ export interface NormalizedMessage {
   mailbox: string;
   uid: number;
   from: string[];
+  replyTo?: string[];
   to: string[];
   cc: string[];
   subject: string;
