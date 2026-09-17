@@ -19,6 +19,7 @@ export interface EmailView {
   mailbox: string;
   uid: number;
   from: string[];
+  replyTo: string[];
   to: string[];
   cc: string[];
   subject: string;
@@ -73,6 +74,7 @@ export function toEmailView(message: NormalizedMessage, includeHtml = false): Em
     mailbox: message.mailbox,
     uid: message.uid,
     from: message.from,
+    replyTo: message.replyTo ?? [],
     to: message.to,
     cc: message.cc,
     subject: message.subject,
