@@ -138,7 +138,7 @@ export function registerMailTools(server: McpServer, imap: ImapMailClient, smtp:
   server.registerTool(
     'send_email_batch',
     {
-      description: 'Send separate personalized outreach messages to multiple creators. This never converts recipients into a CC/BCC blast.',
+      description: 'Send separate personalized outreach messages to multiple creators with bounded throttling and one optional retry for temporary provider/network failures. This never converts recipients into a CC/BCC blast.',
       inputSchema: z.object({
         messages: z.array(z.object({
           to: z.array(email).min(1),
@@ -149,13 +149,22 @@ export function registerMailTools(server: McpServer, imap: ImapMailClient, smtp:
           html: z.string().optional()
         })).min(1).max(25),
         max: z.number().int().min(1).max(25).optional(),
-        allow_duplicates: z.boolean().default(false)
+        allow_duplicates: z.boolean().default(false),
+        delay_ms: z.number().int().min(0).max(5000).default(250),
+        retry_transient: z.boolean().default(true),
+        retry_delay_ms: z.number().int().min(0).max(10000).default(1000)
       }),
       annotations: { readOnlyHint: false, destructiveHint: false }
     },
-    async ({ messages, max, allow_duplicates }) => {
+    async ({ messages, max, allow_duplicates, delay_ms, retry_transient, retry_delay_ms }) => {
       try {
-        return result(await executeBatch(messages, (m) => smtp.send(m), { max, allowDuplicates: allow_duplicates }));
+        return result(await executeBatch(messages, (m) => smtp.send(m), {
+          max,
+          allowDuplicates: allow_duplicates,
+          delayMs: delay_ms,
+          retryTransient: retry_transient,
+          retryDelayMs: retry_delay_ms
+        }));
       } catch (e) { return failure(e); }
     }
   );
