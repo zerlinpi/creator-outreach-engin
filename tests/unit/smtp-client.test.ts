@@ -7,6 +7,7 @@ const config: AppConfig = {
   appPassword: 'app-password',
   fromName: 'CAMPX',
   authToken: '1234567890abcdef',
+  jsonLimit: '1mb',
   port: 3000,
   imap: { host: 'imap.qiye.aliyun.com', port: 993, secure: true },
   smtp: { host: 'smtp.qiye.aliyun.com', port: 465, secure: true }
