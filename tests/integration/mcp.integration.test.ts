@@ -158,14 +158,23 @@ describe('remote MCP HTTP surface', () => {
     try {
       const sendResult = jsonText(await client.callTool({
         name: 'send_email',
-        arguments: { to: ['first@example.com'], subject: 'CAMPX hello', text: 'Hello from CAMPX' }
+        arguments: {
+          to: ['first@example.com'],
+          subject: 'CAMPX hello',
+          text: 'Hello from CAMPX',
+          idempotency_key: 'integration-send-001'
+        }
       }));
       expect(sendResult.accepted).toEqual(['first@example.com']);
       expect(sent[0]).toMatchObject({ to: ['first@example.com'], subject: 'CAMPX hello' });
 
       jsonText(await client.callTool({
         name: 'reply_email',
-        arguments: { message_ref: 'inbox-ref', text: 'Thanks for getting back to us.' }
+        arguments: {
+          message_ref: 'inbox-ref',
+          text: 'Thanks for getting back to us.',
+          idempotency_key: 'integration-reply-inbound-001'
+        }
       }));
       expect(sent[1]).toMatchObject({
         to: ['creator@example.com'],
@@ -175,13 +184,18 @@ describe('remote MCP HTTP surface', () => {
 
       jsonText(await client.callTool({
         name: 'reply_email',
-        arguments: { message_ref: 'sent-ref', text: 'Just following up.' }
+        arguments: {
+          message_ref: 'sent-ref',
+          text: 'Just following up.',
+          idempotency_key: 'integration-followup-001'
+        }
       }));
       expect(sent[2]).toMatchObject({ to: ['creator@example.com'], inReplyTo: '<campx-root@example.com>' });
 
       const batch = jsonText(await client.callTool({
         name: 'send_email_batch',
         arguments: {
+          idempotency_key: 'integration-batch-001',
           messages: [
             { to: ['a@example.com'], subject: 'CAMPX A', text: 'Hi A' },
             { to: ['b@example.com'], subject: 'CAMPX B', text: 'Hi B' }

@@ -29,8 +29,18 @@ export type BatchItemResult =
       error: ReturnType<typeof toSafeError>;
     };
 
+export interface BatchPreflightItem {
+  index: number;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  dryRun: true;
+}
+
 const DEFAULT_DELAY_MS = 250;
 const DEFAULT_RETRY_DELAY_MS = 1000;
+const MAX_WORST_CASE_WAIT_MS = 60_000;
 
 function optionalAddresses(values?: string[]): string[] | undefined {
   return values?.length ? validateAddressList(values) : undefined;
@@ -45,9 +55,14 @@ function isTransient(error: unknown): boolean {
     (error.code === 'TRANSIENT_MAIL_ERROR' || error.code === 'RATE_LIMITED');
 }
 
-function validateTiming(options: BatchOptions): { delayMs: number; retryDelayMs: number } {
+function validateTiming(options: BatchOptions, messageCount: number): {
+  delayMs: number;
+  retryDelayMs: number;
+  retryTransient: boolean;
+} {
   const delayMs = options.delayMs ?? DEFAULT_DELAY_MS;
   const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+  const retryTransient = options.retryTransient ?? false;
 
   if (!Number.isInteger(delayMs) || delayMs < 0 || delayMs > 5000) {
     throw new ConnectorError('RATE_LIMITED', 'Batch delay must be between 0 and 5000 milliseconds.');
@@ -56,7 +71,16 @@ function validateTiming(options: BatchOptions): { delayMs: number; retryDelayMs:
     throw new ConnectorError('RATE_LIMITED', 'Retry delay must be between 0 and 10000 milliseconds.');
   }
 
-  return { delayMs, retryDelayMs };
+  const worstCaseWaitMs = delayMs * Math.max(0, messageCount - 1) +
+    (retryTransient ? retryDelayMs * messageCount : 0);
+  if (worstCaseWaitMs > MAX_WORST_CASE_WAIT_MS) {
+    throw new ConnectorError(
+      'RATE_LIMITED',
+      `Batch configuration can wait up to ${worstCaseWaitMs} ms; maximum allowed is ${MAX_WORST_CASE_WAIT_MS} ms.`
+    );
+  }
+
+  return { delayMs, retryDelayMs, retryTransient };
 }
 
 export function validateBatch(messages: OutgoingMessage[], options: BatchOptions = {}): OutgoingMessage[] {
@@ -85,14 +109,34 @@ export function validateBatch(messages: OutgoingMessage[], options: BatchOptions
   });
 }
 
+function validateExecution(messages: OutgoingMessage[], options: BatchOptions): {
+  validated: OutgoingMessage[];
+  delayMs: number;
+  retryDelayMs: number;
+  retryTransient: boolean;
+} {
+  const validated = validateBatch(messages, options);
+  return { validated, ...validateTiming(options, validated.length) };
+}
+
+export function preflightBatch(messages: OutgoingMessage[], options: BatchOptions = {}): BatchPreflightItem[] {
+  const { validated } = validateExecution(messages, options);
+  return validated.map((message, index) => ({
+    index,
+    to: message.to,
+    cc: message.cc ?? [],
+    bcc: message.bcc ?? [],
+    subject: message.subject,
+    dryRun: true
+  }));
+}
+
 export async function executeBatch(
   messages: OutgoingMessage[],
   send: (message: OutgoingMessage) => Promise<SendResult>,
   options: BatchOptions = {}
 ): Promise<BatchItemResult[]> {
-  const validated = validateBatch(messages, options);
-  const { delayMs, retryDelayMs } = validateTiming(options);
-  const retryTransient = options.retryTransient ?? true;
+  const { validated, delayMs, retryDelayMs, retryTransient } = validateExecution(messages, options);
   const sleep = options.sleep ?? defaultSleep;
   const results: BatchItemResult[] = [];
 

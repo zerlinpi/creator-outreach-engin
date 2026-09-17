@@ -18,23 +18,31 @@ const message: NormalizedMessage = {
   inReplyTo: null,
   references: [],
   attachments: [{ filename: 'rate.pdf', contentType: 'application/pdf', size: 100, contentDisposition: 'attachment', cid: null }],
-  unread: true
+  unread: true,
+  truncated: true
 };
 
 describe('mail tool presenters', () => {
-  it('returns compact search summaries without full body or HTML', () => {
+  it('returns compact search summaries without full body or HTML and exposes truncation', () => {
     const summary = toSearchSummary(message);
-    expect(summary).toMatchObject({ id: 'ref-1', subject: 'CAMPX partnership', externalContent: true, hasAttachments: true });
+    expect(summary).toMatchObject({
+      id: 'ref-1',
+      subject: 'CAMPX partnership',
+      externalContent: true,
+      hasAttachments: true,
+      truncated: true
+    });
     expect(summary.preview.length).toBeLessThanOrEqual(280);
     expect(summary).not.toHaveProperty('html');
     expect(summary).not.toHaveProperty('text');
   });
 
-  it('exposes reply routing, omits HTML by default, and sanitizes HTML when explicitly requested', () => {
+  it('exposes reply routing, truncation, omits HTML by default, and sanitizes HTML when explicitly requested', () => {
     const plain = toEmailView(message, false);
     expect(plain.replyTo).toEqual(['partnerships@agency.example']);
     expect(plain).not.toHaveProperty('html');
     expect(plain.externalContent).toBe(true);
+    expect(plain.truncated).toBe(true);
 
     const withHtml = toEmailView(message, true);
     expect(withHtml.replyTo).toEqual(['partnerships@agency.example']);

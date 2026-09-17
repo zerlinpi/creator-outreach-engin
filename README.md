@@ -12,21 +12,28 @@ Seven MCP tools are exposed:
 - `get_thread` — reconstruct a conversation across Inbox and the provider-designated Sent folder.
 - `send_email` — send one new outreach message.
 - `reply_email` — reply to inbound or previously sent messages while preserving RFC thread headers.
-- `send_email_batch` — send separate personalized messages to multiple creators; never converts the list into a CC/BCC blast.
+- `send_email_batch` — dry-run or send separate personalized messages to multiple creators; never converts the list into a CC/BCC blast.
 
-Batch default is 10 messages and the hard maximum is 25 per tool invocation. Batch delivery is intentionally sequential. By default the connector waits 250 ms between creator messages and retries a temporary provider/network failure once after 1000 ms. Each batch result includes its item index, recipient list, subject, number of attempts, and final success/error so ChatGPT can identify the exact creator that needs attention.
+Write tools use idempotency keys so a retried MCP request does not silently duplicate a send. Reusing the same key with a different payload is rejected as `IDEMPOTENCY_CONFLICT`. Completed results are cached for 15 minutes by default and the in-memory cache is bounded.
 
-`send_email_batch` supports bounded controls when a specific sending cadence is needed:
+## Batch sending safeguards
 
+Batch default is 10 messages and the hard maximum is 25 per tool invocation. Delivery is sequential rather than concurrent.
+
+`send_email_batch` supports:
+
+- `dry_run` — validate and preview recipients/subjects without sending and without consuming an idempotency key.
+- `idempotency_key` — required for a real batch send.
 - `delay_ms` — 0–5000 ms between separate creator messages; default 250.
-- `retry_transient` — retry one temporary provider/network failure; default true.
-- `retry_delay_ms` — 0–10000 ms before the one retry; default 1000.
+- `retry_transient` — retry one temporary provider/network failure; default **false** to avoid ambiguous duplicate delivery.
+- `retry_delay_ms` — 0–10000 ms before the optional retry; default 1000.
+- `allow_duplicates` — default false; duplicate recipient + subject pairs in one batch are rejected.
 
-These controls are for small creator outreach batches, not newsletter-scale sending.
+The connector rejects batch timing configurations whose worst-case configured wait exceeds 60 seconds. These controls are for small creator-outreach batches, not newsletter-scale sending.
 
 ## Alibaba Mail setup
 
-Use a dedicated Alibaba Mail third-party client/app password when available. Never commit the mailbox password or connector token.
+Use a dedicated Alibaba Mail third-party client/app password when available. Never commit mailbox passwords, app passwords, or connector tokens.
 
 ```bash
 cp .env.example .env
@@ -36,18 +43,33 @@ Required values:
 
 - `MAIL_USERNAME` — full CAMPX enterprise email address.
 - `MAIL_APP_PASSWORD` — Alibaba Mail third-party/app password.
-- `CONNECTOR_AUTH_TOKEN` — random bearer token with at least 16 characters.
+- `CONNECTOR_AUTH_TOKEN` — random bearer token with at least **32 characters**.
+
+Production deployments should also set:
+
+- `NODE_ENV=production`
+- `CONNECTOR_ALLOWED_HOSTS` — every hostname legitimately used by the reverse proxy/deployment plus loopback when needed for health checks.
 
 TLS defaults:
 
 - IMAP: `imap.qiye.aliyun.com:993`
 - SMTP: `smtp.qiye.aliyun.com:465`
 
-### Important: keep client-sent mail in Sent
+Bounded mail-resource defaults:
+
+- `MAIL_CONNECTION_TIMEOUT_MS=15000`
+- `MAIL_GREETING_TIMEOUT_MS=10000`
+- `MAIL_SOCKET_TIMEOUT_MS=30000`
+- `MAIL_MAX_MESSAGE_BYTES=10485760` (10 MiB full-message cap)
+- `MAIL_SEARCH_SOURCE_BYTES=131072` (128 KiB search-result source cap)
+
+`MAIL_SEARCH_SOURCE_BYTES` must not exceed `MAIL_MAX_MESSAGE_BYTES`. Search results indicate when source content was truncated; `get_email` rejects full messages that exceed the configured full-message cap.
+
+### Keep client-sent mail in Sent
 
 For thread lookup and follow-up history, Alibaba Mail should save SMTP client messages to the server-side Sent folder. In Alibaba Webmail, check the sending settings and use a rule that saves client-sent messages (for example **Save all**). The connector discovers the Sent folder using IMAP `\\Sent` special-use metadata and falls back to common Sent folder names.
 
-`search_emails` also accepts portable mailbox aliases such as `INBOX` and `SENT`; `SENT` is resolved to the provider-designated Sent folder, so ChatGPT does not have to guess localized folder names such as `已发送` or `Sent Messages`.
+`search_emails` accepts portable mailbox aliases such as `INBOX` and `SENT`; `SENT` is resolved to the provider-designated Sent folder, so ChatGPT does not need to guess localized folder names such as `已发送` or `Sent Messages`.
 
 ## Runtime security
 
@@ -62,14 +84,15 @@ CONNECTOR_ALLOWED_HOSTS=localhost,127.0.0.1
 Production example:
 
 ```env
+NODE_ENV=production
 CONNECTOR_ALLOWED_HOSTS=mail-mcp.example.com,127.0.0.1
 ```
 
-Do not include schemes or ports. Add every hostname your reverse proxy or deployment platform legitimately uses. Keep `127.0.0.1` when using the included Docker `HEALTHCHECK`, because the container checks `/health` through the loopback host.
+Do not include schemes, ports, paths, or wildcards. In production mode the connector refuses to start without an allowlist. Keep `127.0.0.1` when using the included Docker `HEALTHCHECK`, because the container checks `/health` through loopback.
 
-`CONNECTOR_JSON_LIMIT` defaults to `1mb`, enough for normal creator outreach and batch requests while still placing a bound on MCP request bodies.
+`CONNECTOR_JSON_LIMIT` defaults to `1mb`, enough for normal creator outreach and small batch requests while keeping MCP request bodies bounded.
 
-All `/mcp` requests also require:
+All `/mcp` requests require:
 
 ```http
 Authorization: Bearer <CONNECTOR_AUTH_TOKEN>
@@ -80,7 +103,7 @@ Authorization: Bearer <CONNECTOR_AUTH_TOKEN>
 ## Run locally
 
 ```bash
-npm install
+npm ci
 npm test
 npm run typecheck
 npm run build
@@ -104,6 +127,7 @@ Before exposing the MCP endpoint to ChatGPT, run the deployment diagnostic with 
 MAIL_USERNAME=... \
 MAIL_APP_PASSWORD=... \
 CONNECTOR_AUTH_TOKEN=... \
+CONNECTOR_ALLOWED_HOSTS=localhost,127.0.0.1 \
 npm run doctor
 ```
 
@@ -120,7 +144,7 @@ It prints only safe status data such as mailbox count and the resolved Sent fold
 
 The normal CI suite never logs into CAMPX production mail and never sends live email. Two opt-in integration tests are included for an **owned, non-production test mailbox**.
 
-IMAP verification requires:
+IMAP verification:
 
 ```bash
 TEST_MAIL_USERNAME=test-mailbox@example.com \
@@ -142,14 +166,31 @@ npm run test:integration
 
 Optional provider overrides are available as `TEST_MAIL_IMAP_HOST`, `TEST_MAIL_IMAP_PORT`, `TEST_MAIL_SMTP_HOST`, and `TEST_MAIL_SMTP_PORT`. Do not point these tests at the CAMPX production mailbox in CI.
 
+## CI verification
+
+GitHub Actions verifies the repository with the locked dependency graph and Node.js 22.23.2:
+
+```bash
+npm ci
+npm test
+npm run typecheck
+npm run build
+npm audit --omit=dev --audit-level=moderate
+npm audit --audit-level=moderate
+docker build -t creator-outreach-engine:ci .
+```
+
+CI runs on pushes to `main`, pull requests targeting `main`, and can also be started manually with `workflow_dispatch`.
+
 ## Typical ChatGPT prompts
 
 - `查一下 Happily Ever Hanks 最近有没有回复 CAMPX。`
 - `把我们和 creator@example.com 最近的完整邮件线程给我。`
 - `回复这一封，告诉他我们的常规佣金是 8%，最高可以谈到 10%，量大可以另外谈。`
 - `给这 8 个红人分别发送下面的邮件，每个人独立一封。`
-- `打开我们上一封已发送邮件，继续跟进这个红人。`
-- `给这 10 个红人分别发送首封邮件，间隔 500ms；临时失败只重试一次。`
+- `先 dry-run 检查这 10 个红人的收件人和主题，不发送邮件。`
+- `给这 10 个红人分别发送首封邮件，间隔 500ms；不要自动重试。`
+- `这批邮件允许临时失败重试一次，retry_transient=true。`
 
 Email bodies returned by read tools are marked as external/untrusted content. Search results return only short previews; full HTML is not returned unless explicitly requested.
 
@@ -162,7 +203,7 @@ Deploy as a Node.js 22 service or Docker container with outbound TCP access to:
 
 Inject secrets using the hosting platform's secret manager. Never bake `.env` into the image.
 
-The public MCP endpoint must be HTTPS for ChatGPT. Configure `CONNECTOR_ALLOWED_HOSTS` with the deployed hostname plus any legitimate proxy/health-check hosts before enabling the connector.
+For a non-Docker production deployment, explicitly set `NODE_ENV=production`; the Docker image already sets it. The public MCP endpoint must be HTTPS. Configure `CONNECTOR_ALLOWED_HOSTS` with the deployed hostname plus any legitimate proxy/health-check hosts before enabling the connector.
 
 ## Connect to ChatGPT
 
@@ -172,32 +213,36 @@ Write/modify MCP actions such as `send_email`, `reply_email`, and `send_email_ba
 
 ## Verification before real outreach
 
-Before contacting creators, use an owned test inbox and verify the complete loop:
+Before contacting creators, use owned test addresses and verify the complete loop:
 
-1. Run `npm run doctor` and confirm all checks pass.
-2. Run the opt-in IMAP integration test with a non-production mailbox.
-3. Run the opt-in SMTP integration test only with an owned recipient and `TEST_MAIL_LIVE_SEND=true`.
-4. `search_emails` can find a test message.
-5. `get_email` returns the expected text and headers.
-6. `send_email` arrives at the owned test inbox.
-7. Reply from the owned inbox.
-8. `get_thread` shows inbound and outbound messages together.
-9. `reply_email` remains in the same normal mail-client thread.
-10. `send_email_batch` sends separate messages to multiple owned inboxes.
-11. Confirm the batch result identifies each creator independently.
-12. Simulate or observe one temporary SMTP/network failure and confirm only one bounded retry occurs.
+1. Confirm the repository CI is green on the exact commit being deployed.
+2. Run `npm run doctor` and confirm all checks pass.
+3. Run the opt-in IMAP integration test with a non-production mailbox.
+4. Run the opt-in SMTP integration test only with an owned recipient and `TEST_MAIL_LIVE_SEND=true`.
+5. Confirm `search_emails` can find a test message and exposes truncation state when applicable.
+6. Confirm `get_email` returns the expected text and headers.
+7. Dry-run a batch and verify recipients/subjects before sending.
+8. Send one idempotent test email to an owned inbox, then replay the same idempotency key and confirm no duplicate delivery.
+9. Reply from the owned inbox and confirm `get_thread` shows inbound and outbound messages together.
+10. Confirm `reply_email` stays in the same normal mail-client thread.
+11. Confirm `send_email_batch` sends separate messages to multiple owned inboxes.
+12. Explicitly enable `retry_transient=true` in a controlled test and confirm at most one bounded retry occurs.
 13. Confirm SMTP client messages appear in Alibaba Mail Sent.
+14. Deploy behind HTTPS, register `/mcp` in ChatGPT, scan all seven tools, and repeat the owned-inbox end-to-end test before creator outreach.
 
 ## Safety and behavior
 
 - Credentials are loaded only from runtime environment/secrets.
 - Production message bodies are not intentionally logged.
-- Search output is compact to reduce unnecessary mailbox exposure.
+- Search output is compact and bounded to reduce unnecessary mailbox exposure.
+- Full message reads have a configurable byte cap.
 - HTML is opt-in and sanitized before tool output.
 - Batch recipients are validated before the first send.
 - Duplicate recipient + subject pairs are rejected by default within one batch.
 - Batch sends are sequential and throttled rather than fired concurrently.
-- Temporary SMTP/network failures can receive one bounded retry; permanent recipient failures are not retried.
+- Automatic transient retry is disabled by default; when explicitly enabled, at most one bounded retry is attempted.
+- Permanent recipient failures are not retried.
+- Real write operations require idempotency keys; conflicting key reuse is rejected.
 - Replies honor `Reply-To` when present and preserve `Message-ID`, `In-Reply-To`, and `References` when available.
 - Replying from a previously sent CAMPX message correctly targets the original creator recipients.
 - The connector is intentionally not a newsletter sender, CRM, or autonomous negotiation agent.
