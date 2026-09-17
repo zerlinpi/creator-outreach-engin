@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import type { SendMailOptions } from 'nodemailer';
 import type { AppConfig } from '../config.js';
+import { AsyncSemaphore } from '../concurrency.js';
 import { ConnectorError } from '../errors.js';
 import { normalizeAddress, validateAddressList } from './addresses.js';
 import type { OutgoingMessage, SendResult } from './types.js';
@@ -15,6 +16,7 @@ interface MailTransport {
 }
 
 const MAX_ENVELOPE_RECIPIENTS = 21;
+export const MAX_SMTP_CONCURRENCY = 1;
 
 export function buildSmtpTransportOptions(config: AppConfig) {
   return {
@@ -64,6 +66,7 @@ function classifySmtpError(error: unknown): ConnectorError {
 
 export class SmtpMailClient {
   private readonly transport: MailTransport;
+  private readonly concurrencyGate = new AsyncSemaphore(MAX_SMTP_CONCURRENCY);
 
   constructor(private readonly config: AppConfig, transport?: MailTransport) {
     this.transport = transport ?? (nodemailer.createTransport(buildSmtpTransportOptions(config)) as MailTransport);
@@ -73,11 +76,13 @@ export class SmtpMailClient {
     if (!this.transport.verify) {
       throw new ConnectorError('SMTP_UNAVAILABLE', 'SMTP connection verification is unavailable.');
     }
-    try {
-      return await this.transport.verify();
-    } catch (error) {
-      throw classifySmtpError(error);
-    }
+    return this.concurrencyGate.run(async () => {
+      try {
+        return await this.transport.verify!();
+      } catch (error) {
+        throw classifySmtpError(error);
+      }
+    });
   }
 
   async send(message: OutgoingMessage): Promise<SendResult> {
@@ -87,37 +92,39 @@ export class SmtpMailClient {
     const replyTo = message.replyTo ? validateAddressList([message.replyTo])[0] : undefined;
     enforceEnvelopeRecipientLimit(to, cc, bcc);
 
-    try {
-      const info = await this.transport.sendMail({
-        from: { name: this.config.fromName, address: this.config.username },
-        to,
-        cc,
-        bcc,
-        subject: message.subject,
-        text: message.text,
-        html: message.html,
-        replyTo,
-        inReplyTo: message.inReplyTo,
-        references: message.references
-      });
+    return this.concurrencyGate.run(async () => {
+      try {
+        const info = await this.transport.sendMail({
+          from: { name: this.config.fromName, address: this.config.username },
+          to,
+          cc,
+          bcc,
+          subject: message.subject,
+          text: message.text,
+          html: message.html,
+          replyTo,
+          inReplyTo: message.inReplyTo,
+          references: message.references
+        });
 
-      const accepted = info.accepted.map(String);
-      const rejected = info.rejected.map(String);
-      const acceptedAddresses = new Set(accepted.map(normalizeAddress));
-      const missingPrimary = to.filter((address) => !acceptedAddresses.has(address));
+        const accepted = info.accepted.map(String);
+        const rejected = info.rejected.map(String);
+        const acceptedAddresses = new Set(accepted.map(normalizeAddress));
+        const missingPrimary = to.filter((address) => !acceptedAddresses.has(address));
 
-      if (missingPrimary.length > 0) {
-        throw new ConnectorError('RECIPIENT_REJECTED', 'Mail provider did not accept the primary recipient.');
+        if (missingPrimary.length > 0) {
+          throw new ConnectorError('RECIPIENT_REJECTED', 'Mail provider did not accept the primary recipient.');
+        }
+
+        return {
+          accepted,
+          rejected,
+          messageId: info.messageId
+        };
+      } catch (error) {
+        if (error instanceof ConnectorError) throw error;
+        throw classifySmtpError(error);
       }
-
-      return {
-        accepted,
-        rejected,
-        messageId: info.messageId
-      };
-    } catch (error) {
-      if (error instanceof ConnectorError) throw error;
-      throw classifySmtpError(error);
-    }
+    });
   }
 }
