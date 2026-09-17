@@ -14,19 +14,27 @@ function testConfig(): AppConfig {
     username: process.env.TEST_MAIL_USERNAME!,
     appPassword: process.env.TEST_MAIL_APP_PASSWORD!,
     fromName: 'CAMPX Connector Test',
-    authToken: 'integration-test-token',
+    authToken: 'integration-test-token-000000000000',
     allowedHosts: ['localhost'],
     jsonLimit: '1mb',
     port: 3000,
+    maxMessageBytes: 10 * 1024 * 1024,
+    searchSourceBytes: 128 * 1024,
     imap: {
       host: process.env.TEST_MAIL_IMAP_HOST ?? 'imap.qiye.aliyun.com',
       port: Number(process.env.TEST_MAIL_IMAP_PORT ?? '993'),
-      secure: true
+      secure: true,
+      connectionTimeout: 15_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 30_000
     },
     smtp: {
       host: process.env.TEST_MAIL_SMTP_HOST ?? 'smtp.qiye.aliyun.com',
       port: Number(process.env.TEST_MAIL_SMTP_PORT ?? '465'),
-      secure: true
+      secure: true,
+      connectionTimeout: 15_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 30_000
     }
   };
 }
