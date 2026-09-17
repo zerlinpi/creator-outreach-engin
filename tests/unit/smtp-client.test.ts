@@ -54,6 +54,25 @@ describe('SMTP adapter', () => {
     expect(result).toEqual({ accepted: ['creator@example.com'], rejected: ['bad@example.com'], messageId: '<sent@example.com>' });
   });
 
+  it('reports failure when the primary creator recipient is rejected even if a copied recipient was accepted', async () => {
+    const transport = {
+      async sendMail() {
+        return {
+          accepted: ['manager@example.com'],
+          rejected: ['creator@example.com'],
+          messageId: '<partial@example.com>'
+        };
+      }
+    };
+    const client = new SmtpMailClient(config, transport);
+    await expect(client.send({
+      to: ['creator@example.com'],
+      cc: ['manager@example.com'],
+      subject: 'CAMPX',
+      text: 'Hello'
+    })).rejects.toMatchObject({ code: 'RECIPIENT_REJECTED' });
+  });
+
   it('rejects an oversized recipient envelope before contacting SMTP', async () => {
     let sends = 0;
     const transport = {
