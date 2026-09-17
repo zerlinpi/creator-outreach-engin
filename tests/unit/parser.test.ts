@@ -53,4 +53,24 @@ describe('parseMessage', () => {
     ]);
     expect(message.unread).toBe(true);
   });
+
+  it('preserves recipients across repeated To and Cc headers', async () => {
+    const raw = [
+      'From: Creator <creator@example.com>',
+      'To: CAMPX <campx@example.com>',
+      'To: Marketing <marketing@campx.example>',
+      'Cc: Manager <manager@agency.example>',
+      'Cc: Assistant <assistant@agency.example>',
+      'Subject: Multiple recipients',
+      'Message-ID: <multi@example.com>',
+      '',
+      'Hello everyone.'
+    ].join('\r\n');
+
+    const message = await parseMessage(raw, { id: 'ref-2', mailbox: 'INBOX', uid: 43 });
+    expect(message.to).toEqual(expect.arrayContaining(['campx@example.com', 'marketing@campx.example']));
+    expect(message.to).toHaveLength(2);
+    expect(message.cc).toEqual(expect.arrayContaining(['manager@agency.example', 'assistant@agency.example']));
+    expect(message.cc).toHaveLength(2);
+  });
 });
