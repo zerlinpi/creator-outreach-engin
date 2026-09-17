@@ -156,7 +156,7 @@ export class ImapMailClient {
   }
 
   async getThread(input: { messageRef?: string; participant?: string; subject?: string }): Promise<ThreadResult> {
-    const sent = await this.sentMailbox().catch(() => null);
+    const sent = await this.sentMailbox();
 
     if (input.messageRef) {
       const anchor = await this.getEmail(input.messageRef);
@@ -165,9 +165,7 @@ export class ImapMailClient {
       if (sent) mailboxes.add(sent);
 
       const pools = await Promise.all(
-        [...mailboxes].map((mailbox) =>
-          this.searchEmails({ mailbox, subject, limit: 100 }).catch(() => [])
-        )
+        [...mailboxes].map((mailbox) => this.searchEmails({ mailbox, subject, limit: 100 }))
       );
       const messages = dedupeMessages([anchor, ...pools.flat()]);
       return resolveThread(messages, anchor);
@@ -178,11 +176,11 @@ export class ImapMailClient {
     }
 
     const searches: Array<Promise<NormalizedMessage[]>> = [
-      this.searchEmails({ from: input.participant, subject: input.subject, mailbox: 'INBOX', limit: 100 }).catch(() => [])
+      this.searchEmails({ from: input.participant, subject: input.subject, mailbox: 'INBOX', limit: 100 })
     ];
     if (sent) {
       searches.push(
-        this.searchEmails({ to: input.participant, subject: input.subject, mailbox: sent, limit: 100 }).catch(() => [])
+        this.searchEmails({ to: input.participant, subject: input.subject, mailbox: sent, limit: 100 })
       );
     }
 
