@@ -23,6 +23,7 @@ export interface NormalizedMessage {
   references: string[];
   attachments: AttachmentMeta[];
   unread?: boolean;
+  truncated?: boolean;
 }
 
 export interface OutgoingMessage {
