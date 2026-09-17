@@ -4,6 +4,7 @@ import { toNodeHandler } from '@modelcontextprotocol/node';
 import { isAuthorized } from './auth/bearer.js';
 import type { ImapMailClient } from './mail/imap-client.js';
 import type { SmtpMailClient } from './mail/smtp-client.js';
+import { IdempotencyStore } from './mail/idempotency.js';
 import { registerMailTools } from './tools/register.js';
 
 export interface HttpAppDependencies {
@@ -13,15 +14,17 @@ export interface HttpAppDependencies {
   smtp: SmtpMailClient;
   allowedHosts?: string[];
   jsonLimit?: string;
+  idempotencyStore?: IdempotencyStore;
 }
 
 export function createHttpApp(deps: HttpAppDependencies) {
+  const idempotency = deps.idempotencyStore ?? new IdempotencyStore();
   const handler = createMcpHandler(() => {
     const server = new McpServer(
       { name: 'campx-creator-mail', version: '0.1.0' },
       { capabilities: { tools: {} } }
     );
-    registerMailTools(server, deps.imap, deps.smtp, deps.mailboxAddress);
+    registerMailTools(server, deps.imap, deps.smtp, deps.mailboxAddress, idempotency);
     return server;
   });
 
