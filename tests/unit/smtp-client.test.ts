@@ -52,4 +52,20 @@ describe('SMTP adapter', () => {
       expect((error as ConnectorError).code).toBe('TRANSIENT_MAIL_ERROR');
     }
   });
+
+  it('verifies SMTP authentication without sending a message', async () => {
+    let verified = 0;
+    const transport = {
+      async sendMail() {
+        throw new Error('send should not be called');
+      },
+      async verify() {
+        verified += 1;
+        return true;
+      }
+    };
+    const client = new SmtpMailClient(config, transport);
+    await expect(client.verifyConnection()).resolves.toBe(true);
+    expect(verified).toBe(1);
+  });
 });
