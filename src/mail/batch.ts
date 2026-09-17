@@ -29,6 +29,15 @@ export type BatchItemResult =
       error: ReturnType<typeof toSafeError>;
     };
 
+export interface BatchPreflightItem {
+  index: number;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  dryRun: true;
+}
+
 const DEFAULT_DELAY_MS = 250;
 const DEFAULT_RETRY_DELAY_MS = 1000;
 
@@ -83,6 +92,17 @@ export function validateBatch(messages: OutgoingMessage[], options: BatchOptions
     seen.add(key);
     return normalized;
   });
+}
+
+export function preflightBatch(messages: OutgoingMessage[], options: BatchOptions = {}): BatchPreflightItem[] {
+  return validateBatch(messages, options).map((message, index) => ({
+    index,
+    to: message.to,
+    cc: message.cc ?? [],
+    bcc: message.bcc ?? [],
+    subject: message.subject,
+    dryRun: true
+  }));
 }
 
 export async function executeBatch(
