@@ -17,6 +17,12 @@ describe('loadConfig', () => {
     expect(config.imap).toMatchObject({ host: 'imap.qiye.aliyun.com', port: 993, secure: true });
     expect(config.smtp).toMatchObject({ host: 'smtp.qiye.aliyun.com', port: 465, secure: true });
     expect(config.fromName).toBe('CAMPX');
+    expect(config.jsonLimit).toBe('1mb');
+  });
+
+  it('parses a deployment host allowlist', () => {
+    const config = loadConfig({ ...baseEnv, CONNECTOR_ALLOWED_HOSTS: 'mail.campxusainc.com, localhost ,127.0.0.1' });
+    expect(config.allowedHosts).toEqual(['mail.campxusainc.com', 'localhost', '127.0.0.1']);
   });
 
   it('rejects invalid numeric ports', () => {
