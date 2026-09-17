@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { executeBatch, validateBatch } from '../../src/mail/batch.js';
+import { executeBatch, preflightBatch, validateBatch } from '../../src/mail/batch.js';
 import { ConnectorError } from '../../src/errors.js';
 
 const msg = (to: string, subject = 'Hello') => ({ to: [to], subject, text: 'Body' });
@@ -13,6 +13,37 @@ describe('batch safety', () => {
     const [validated] = validateBatch([{ ...msg('a@example.com'), cc: [], bcc: [] }]);
     expect(validated.cc).toBeUndefined();
     expect(validated.bcc).toBeUndefined();
+  });
+
+  it('preflights a batch without message bodies and with normalized recipients', () => {
+    const preview = preflightBatch([
+      { ...msg('A@Example.COM', ' First '), cc: ['Manager@Agency.Example'] },
+      msg('b@example.com', 'Second')
+    ]);
+    expect(preview).toEqual([
+      {
+        index: 0,
+        to: ['a@example.com'],
+        cc: ['manager@agency.example'],
+        bcc: [],
+        subject: ' First ',
+        dryRun: true
+      },
+      {
+        index: 1,
+        to: ['b@example.com'],
+        cc: [],
+        bcc: [],
+        subject: 'Second',
+        dryRun: true
+      }
+    ]);
+    expect(JSON.stringify(preview)).not.toContain('Body');
+  });
+
+  it('dry-run preflight rejects the same duplicate and limit risks as a real batch', () => {
+    expect(() => preflightBatch([msg('a@example.com'), msg('A@example.com')])).toThrow();
+    expect(() => preflightBatch(Array.from({ length: 11 }, (_, i) => msg(`u${i}@example.com`)))).toThrow();
   });
 
   it('returns independent item results with recipient and subject identity', async () => {
