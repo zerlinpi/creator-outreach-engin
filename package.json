@@ -9,7 +9,8 @@
     "test:integration": "vitest run tests/integration",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/src/server.js"
+    "start": "node dist/src/server.js",
+    "doctor": "npm run build --silent && node dist/src/doctor.js"
   },
   "dependencies": {
     "@modelcontextprotocol/express": "^2.0.0",
