@@ -1,11 +1,20 @@
 name: CI
+
 on:
   push:
     branches: [main, feature/mcp-mail-connector]
   pull_request:
     branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,3 +25,7 @@ jobs:
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Build production container
+        run: docker build -t creator-outreach-engine:ci .
