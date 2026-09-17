@@ -96,6 +96,26 @@ Endpoints:
 - Health: `GET /health`
 - MCP: `/mcp`
 
+## Mail doctor
+
+Before exposing the MCP endpoint to ChatGPT, run the deployment diagnostic with the real mailbox secrets injected through your shell or hosting platform:
+
+```bash
+MAIL_USERNAME=... \
+MAIL_APP_PASSWORD=... \
+CONNECTOR_AUTH_TOKEN=... \
+npm run doctor
+```
+
+The doctor does **not** send an email. It verifies that:
+
+- IMAP authentication succeeds.
+- mailbox folders can be listed.
+- a usable Sent folder can be identified.
+- SMTP authentication/connectivity succeeds.
+
+It prints only safe status data such as mailbox count and the resolved Sent folder. Passwords and raw provider errors are intentionally not included. A non-zero process exit code means deployment should not proceed until the failing check is fixed.
+
 ## Typical ChatGPT prompts
 
 - `查一下 Happily Ever Hanks 最近有没有回复 CAMPX。`
@@ -128,16 +148,17 @@ Write/modify MCP actions such as `send_email`, `reply_email`, and `send_email_ba
 
 Before contacting creators, use an owned test inbox and verify the complete loop:
 
-1. `search_emails` can find a test message.
-2. `get_email` returns the expected text and headers.
-3. `send_email` arrives at the owned test inbox.
-4. Reply from the owned inbox.
-5. `get_thread` shows inbound and outbound messages together.
-6. `reply_email` remains in the same normal mail-client thread.
-7. `send_email_batch` sends separate messages to multiple owned inboxes.
-8. Confirm the batch result identifies each creator independently.
-9. Simulate or observe one temporary SMTP/network failure and confirm only one bounded retry occurs.
-10. Confirm SMTP client messages appear in Alibaba Mail Sent.
+1. Run `npm run doctor` and confirm all checks pass.
+2. `search_emails` can find a test message.
+3. `get_email` returns the expected text and headers.
+4. `send_email` arrives at the owned test inbox.
+5. Reply from the owned inbox.
+6. `get_thread` shows inbound and outbound messages together.
+7. `reply_email` remains in the same normal mail-client thread.
+8. `send_email_batch` sends separate messages to multiple owned inboxes.
+9. Confirm the batch result identifies each creator independently.
+10. Simulate or observe one temporary SMTP/network failure and confirm only one bounded retry occurs.
+11. Confirm SMTP client messages appear in Alibaba Mail Sent.
 
 ## Safety and behavior
 
