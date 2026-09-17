@@ -2,7 +2,8 @@ import { z } from 'zod';
 
 const PortSchema = z.coerce.number().int().min(1).max(65535);
 const TimeoutSchema = z.coerce.number().int().min(1_000).max(120_000);
-const ByteSizeSchema = z.coerce.number().int().min(32 * 1024).max(25 * 1024 * 1024);
+const FullMessageByteSizeSchema = z.coerce.number().int().min(32 * 1024).max(25 * 1024 * 1024);
+const SearchSourceByteSizeSchema = z.coerce.number().int().min(32 * 1024).max(512 * 1024);
 
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -16,8 +17,8 @@ const EnvSchema = z.object({
   MAIL_CONNECTION_TIMEOUT_MS: TimeoutSchema.default(15_000),
   MAIL_GREETING_TIMEOUT_MS: TimeoutSchema.default(10_000),
   MAIL_SOCKET_TIMEOUT_MS: TimeoutSchema.default(30_000),
-  MAIL_MAX_MESSAGE_BYTES: ByteSizeSchema.default(10 * 1024 * 1024),
-  MAIL_SEARCH_SOURCE_BYTES: ByteSizeSchema.default(128 * 1024),
+  MAIL_MAX_MESSAGE_BYTES: FullMessageByteSizeSchema.default(10 * 1024 * 1024),
+  MAIL_SEARCH_SOURCE_BYTES: SearchSourceByteSizeSchema.default(128 * 1024),
   CONNECTOR_AUTH_TOKEN: z.string().min(32),
   CONNECTOR_ALLOWED_HOSTS: z.string().optional(),
   CONNECTOR_JSON_LIMIT: z.string().min(1).default('1mb'),

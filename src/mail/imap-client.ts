@@ -1,5 +1,6 @@
 import { ImapFlow } from 'imapflow';
 import type { AppConfig } from '../config.js';
+import { AsyncSemaphore } from '../concurrency.js';
 import { ConnectorError } from '../errors.js';
 import { parseMessage } from './parser.js';
 import { normalizeSubject, resolveThread } from './threading.js';
@@ -17,6 +18,8 @@ export interface SearchCriteria {
   before?: Date;
   limit?: number;
 }
+
+export const MAX_IMAP_CONCURRENCY = 4;
 
 export function buildImapClientOptions(config: AppConfig) {
   return {
@@ -99,6 +102,8 @@ function dedupeMessages(messages: NormalizedMessage[]): NormalizedMessage[] {
 }
 
 export class ImapMailClient {
+  private readonly concurrencyGate = new AsyncSemaphore(MAX_IMAP_CONCURRENCY);
+
   constructor(private readonly config: AppConfig) {}
 
   private createClient() {
@@ -106,18 +111,20 @@ export class ImapMailClient {
   }
 
   private async withClient<T>(fn: (client: ImapFlow) => Promise<T>): Promise<T> {
-    const client = this.createClient();
-    try {
-      await client.connect();
-      return await fn(client);
-    } catch (error) {
-      if (error instanceof ConnectorError) throw error;
-      throw classifyImapError(error);
-    } finally {
+    return this.concurrencyGate.run(async () => {
+      const client = this.createClient();
       try {
-        if (client.usable) await client.logout();
-      } catch {}
-    }
+        await client.connect();
+        return await fn(client);
+      } catch (error) {
+        if (error instanceof ConnectorError) throw error;
+        throw classifyImapError(error);
+      } finally {
+        try {
+          if (client.usable) await client.logout();
+        } catch {}
+      }
+    });
   }
 
   async listMailboxes() {
