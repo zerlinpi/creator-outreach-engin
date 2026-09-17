@@ -29,5 +29,7 @@ jobs:
       - run: npm run build
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=moderate
+      - name: Audit all dependencies
+        run: npm audit --audit-level=moderate
       - name: Build production container
         run: docker build -t creator-outreach-engine:ci .
