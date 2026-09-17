@@ -7,8 +7,13 @@ export interface ReplyInput { text: string; html?: string; replyAll?: boolean }
 export function buildReplyMessage(parent: NormalizedMessage, input: ReplyInput, mailboxAddress: string): OutgoingMessage {
   const self = normalizeAddress(mailboxAddress);
   const externalSenders = parent.from.map(normalizeAddress).filter((address) => address !== self);
+  const explicitReplyTargets = (parent.replyTo ?? []).map(normalizeAddress).filter((address) => address !== self);
   const originalRecipients = parent.to.map(normalizeAddress).filter((address) => address !== self);
-  const to = validateAddressList(externalSenders.length ? externalSenders : originalRecipients);
+
+  const replyTargets = externalSenders.length && explicitReplyTargets.length
+    ? explicitReplyTargets
+    : externalSenders;
+  const to = validateAddressList(replyTargets.length ? replyTargets : originalRecipients);
 
   const cc = input.replyAll
     ? [...new Set(
