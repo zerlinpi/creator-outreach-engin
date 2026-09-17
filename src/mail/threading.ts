@@ -36,11 +36,16 @@ export function resolveThread(messages: NormalizedMessage[], anchor: NormalizedM
         }
       }
     }
-    if (matched.size > 0) return { messages: messages.filter((m) => matched.has(m.id)).sort((a,b) => a.date.getTime() - b.date.getTime()), heuristic: false };
+    if (matched.size > 1) {
+      return {
+        messages: messages.filter((m) => matched.has(m.id)).sort((a, b) => a.date.getTime() - b.date.getTime()),
+        heuristic: false
+      };
+    }
   }
 
   const subject = normalizeSubject(anchor.subject).toLowerCase();
   const anchorPeople = participants(anchor);
   const heuristic = messages.filter((m) => normalizeSubject(m.subject).toLowerCase() === subject && [...participants(m)].some((p) => anchorPeople.has(p)));
-  return { messages: heuristic.sort((a,b) => a.date.getTime() - b.date.getTime()), heuristic: true };
+  return { messages: heuristic.sort((a, b) => a.date.getTime() - b.date.getTime()), heuristic: true };
 }
