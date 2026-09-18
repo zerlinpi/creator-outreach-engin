@@ -83,15 +83,15 @@ function parseToolResult(result: Awaited<ReturnType<Client['callTool']>>) {
 }
 
 describe('single-replica limit and capacity verification', () => {
-  it('serves 100 concurrent read tool calls through one MCP session', async () => {
+  it('serves 250 concurrent read tool calls through one MCP session', async () => {
     const { client, transport } = await openClient();
     try {
       const results = await Promise.all(
-        Array.from({ length: 100 }, () =>
+        Array.from({ length: 250 }, () =>
           client.callTool({ name: 'list_mailboxes', arguments: {} })
         )
       );
-      expect(results).toHaveLength(100);
+      expect(results).toHaveLength(250);
       expect(results.every((result) => !result.isError)).toBe(true);
       expect(results.every((result) => parseToolResult(result)[0]?.path === 'INBOX')).toBe(true);
     } finally {
@@ -100,7 +100,7 @@ describe('single-replica limit and capacity verification', () => {
     }
   });
 
-  it('coalesces 100 concurrent replays of the same write into one SMTP send', async () => {
+  it('coalesces 500 concurrent replays of the same write into one SMTP send', async () => {
     const { client, transport, sent } = await openClient({ sendDelayMs: 10 });
     try {
       const args = {
@@ -110,7 +110,7 @@ describe('single-replica limit and capacity verification', () => {
         idempotency_key: 'limit-same-key-001'
       };
       const results = await Promise.all(
-        Array.from({ length: 100 }, () =>
+        Array.from({ length: 500 }, () =>
           client.callTool({ name: 'send_email', arguments: args })
         )
       );
@@ -124,11 +124,11 @@ describe('single-replica limit and capacity verification', () => {
     }
   });
 
-  it('handles 100 concurrent distinct idempotent writes without dropping sends', async () => {
+  it('handles 250 concurrent distinct idempotent writes without dropping sends', async () => {
     const { client, transport, sent } = await openClient({ sendDelayMs: 2 });
     try {
       const results = await Promise.all(
-        Array.from({ length: 100 }, (_, index) =>
+        Array.from({ length: 250 }, (_, index) =>
           client.callTool({
             name: 'send_email',
             arguments: {
@@ -141,8 +141,8 @@ describe('single-replica limit and capacity verification', () => {
         )
       );
       expect(results.every((result) => !result.isError)).toBe(true);
-      expect(sent).toHaveLength(100);
-      expect(new Set(sent.map((message) => message.to[0])).size).toBe(100);
+      expect(sent).toHaveLength(250);
+      expect(new Set(sent.map((message) => message.to[0])).size).toBe(250);
     } finally {
       await transport.terminateSession().catch(() => undefined);
       await client.close();
