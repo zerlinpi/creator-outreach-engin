@@ -21,7 +21,7 @@ Capacity-bound high-water verification passed on GitHub Actions run 133 for comm
 - A 25-message batch is accepted when configured with `max=25`.
 - A 26-message batch is rejected before SMTP is invoked.
 - A request body larger than a configured 32 KiB JSON cap is rejected with HTTP 413 before MCP handling.
-- The complete repository suite passes with 87 tests, with the two credential-gated live mail tests skipped by design.
+- The complete repository suite passes with 87 tests, with three credential-gated live tests skipped by design (IMAP, single SMTP send, and provider pacing).
 - At the capacity-bound high-water mark, the six limit tests completed in about 10.0 seconds and the full repository suite completed in about 10.6 seconds on that specific GitHub-hosted runner. This timing is evidence only, not a guaranteed performance target.
 
 ## Current operational ceiling
