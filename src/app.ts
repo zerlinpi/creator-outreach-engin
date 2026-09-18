@@ -2,6 +2,7 @@ import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import { createMcpExpressApp } from '@modelcontextprotocol/express';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import { isAuthorized } from './auth/bearer.js';
+import { isOAuthAuthorized, oauthChallenge, registerOAuthRoutes, type OAuthConfig } from './auth/oauth.js';
 import type { ImapMailClient } from './mail/imap-client.js';
 import type { SmtpMailClient } from './mail/smtp-client.js';
 import { IdempotencyStore } from './mail/idempotency.js';
@@ -14,6 +15,7 @@ export interface HttpAppDependencies {
   smtp: SmtpMailClient;
   allowedHosts?: string[];
   jsonLimit?: string;
+  oauth?: OAuthConfig;
   idempotencyStore?: IdempotencyStore;
 }
 
@@ -38,8 +40,14 @@ export function createHttpApp(deps: HttpAppDependencies) {
     res.status(200).json({ ok: true, service: 'campx-creator-mail' });
   });
 
+  if (deps.oauth) {
+    registerOAuthRoutes(app, deps.oauth);
+  }
+
   app.use('/mcp', (req, res, next) => {
-    if (!isAuthorized(req.header('authorization'), deps.authToken)) {
+    const authorization = req.header('authorization');
+    if (!isAuthorized(authorization, deps.authToken) && !isOAuthAuthorized(authorization, deps.oauth)) {
+      if (deps.oauth) res.setHeader('WWW-Authenticate', oauthChallenge(deps.oauth));
       return res.status(401).json({ error: 'unauthorized' });
     }
     next();
