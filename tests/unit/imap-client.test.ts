@@ -1,6 +1,8 @@
+import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import type { AppConfig } from '../../src/config.js';
 import {
+  attachImapErrorListener,
   buildFullMessageFetchQuery,
   buildImapClientOptions,
   buildSearchFetchQuery,
@@ -95,5 +97,14 @@ describe('IMAP resource policy', () => {
     try { enforceMessageSize(10 * 1024 * 1024 + 1, config.maxMessageBytes); } catch (error) {
       expect((error as ConnectorError).code).toBe('MESSAGE_TOO_LARGE');
     }
+  });
+});
+
+
+describe('IMAP error event safety', () => {
+  it('consumes emitted error events so transport timeouts do not crash the Node process', () => {
+    const emitter = new EventEmitter();
+    attachImapErrorListener(emitter);
+    expect(() => emitter.emit('error', Object.assign(new Error('Socket timeout'), { code: 'ETIMEOUT' }))).not.toThrow();
   });
 });
