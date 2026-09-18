@@ -12,17 +12,17 @@ They do **not** establish Alibaba Mail account quotas, provider rate limits, net
 
 ## Verified connector-internal limits
 
-Verified on GitHub Actions run 129 for commit `cdd1c26fd2bc5d4a31f1b1a7982956a03eee294d`:
+Capacity-bound high-water verification passed on GitHub Actions run 133 for commit `26449c2f85cb377e8810cdc2db3b9b5882843fcb`:
 
-- 100 concurrent MCP read-tool calls complete successfully through one session.
-- 100 concurrent replays of the same `send_email` request coalesce into exactly one SMTP adapter call.
-- 100 concurrent distinct idempotent writes complete without dropped mock sends.
+- 500 concurrent MCP read-tool calls complete successfully through one session.
+- 1000 concurrent replays of the same `send_email` request coalesce into exactly one SMTP adapter call.
+- 1000 concurrent distinct idempotent writes fill the default idempotency capacity without dropped mock sends; the next unique key fails closed with `RATE_LIMITED`.
 - The default idempotency store safely protects 1000 entries and fails closed on entry 1001.
 - A 25-message batch is accepted when configured with `max=25`.
 - A 26-message batch is rejected before SMTP is invoked.
 - A request body larger than a configured 32 KiB JSON cap is rejected with HTTP 413 before MCP handling.
 - The complete repository suite passes with 87 tests, with the two credential-gated live mail tests skipped by design.
-- The six limit tests completed in about 1.6 seconds on that specific GitHub-hosted runner. This timing is evidence only, not a guaranteed performance target.
+- At the capacity-bound high-water mark, the six limit tests completed in about 10.0 seconds and the full repository suite completed in about 10.6 seconds on that specific GitHub-hosted runner. This timing is evidence only, not a guaranteed performance target.
 
 ## Current operational ceiling
 
@@ -76,3 +76,21 @@ The external stage is considered safe for creator outreach only when:
 - Inbox/Sent thread reconstruction remains correct;
 - the deployed service remains single-replica;
 - HTTPS MCP registration in ChatGPT exposes exactly the intended seven tools.
+
+## Opt-in provider pacing harness
+
+The repository includes a live SMTP pacing harness that is disabled unless all required variables are explicitly supplied. It is intended only for an owned non-production mailbox and an owned recipient.
+
+Start at one message:
+
+```bash
+TEST_MAIL_USERNAME=test-mailbox@example.com \\
+TEST_MAIL_APP_PASSWORD=... \\
+TEST_MAIL_RECIPIENT=owned-test-inbox@example.com \\
+TEST_MAIL_LIVE_PACING=true \\
+TEST_MAIL_PACING_COUNT=1 \\
+TEST_MAIL_PACING_DELAY_MS=500 \\
+npm run test:provider-pacing
+```
+
+Then repeat with counts 5, 10, and at most 25 only if the previous stage is clean. The harness is sequential, enforces a 1–25 message count and a 250–5000 ms delay, and stops on the first thrown provider failure. CI never enables this test.
