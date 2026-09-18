@@ -54,6 +54,48 @@ describe('loadConfig', () => {
     })).not.toThrow();
   });
 
+  it('enables OAuth only when all OAuth secrets are configured', () => {
+    expect(loadConfig(baseEnv).oauth).toBeUndefined();
+    expect(() => loadConfig({ ...baseEnv, OAUTH_ISSUER: 'https://domail.campxusainc.com' })).toThrow();
+
+    const config = loadConfig({
+      ...baseEnv,
+      NODE_ENV: 'production',
+      CONNECTOR_ALLOWED_HOSTS: 'domail.campxusainc.com',
+      OAUTH_ISSUER: 'https://domail.campxusainc.com',
+      OAUTH_LOGIN_PASSWORD: 'oauth-login-password-123',
+      OAUTH_SIGNING_SECRET: 'oauth-signing-secret-1234567890-abcdef'
+    });
+
+    expect(config.oauth).toEqual({
+      issuer: 'https://domail.campxusainc.com',
+      loginPassword: 'oauth-login-password-123',
+      signingSecret: 'oauth-signing-secret-1234567890-abcdef'
+    });
+  });
+
+  it('requires HTTPS and an allowed issuer host for production OAuth', () => {
+    const oauth = {
+      OAUTH_LOGIN_PASSWORD: 'oauth-login-password-123',
+      OAUTH_SIGNING_SECRET: 'oauth-signing-secret-1234567890-abcdef'
+    };
+    expect(() => loadConfig({
+      ...baseEnv,
+      ...oauth,
+      NODE_ENV: 'production',
+      CONNECTOR_ALLOWED_HOSTS: 'domail.campxusainc.com',
+      OAUTH_ISSUER: 'http://domail.campxusainc.com'
+    })).toThrow();
+
+    expect(() => loadConfig({
+      ...baseEnv,
+      ...oauth,
+      NODE_ENV: 'production',
+      CONNECTOR_ALLOWED_HOSTS: 'other.example.com',
+      OAUTH_ISSUER: 'https://domail.campxusainc.com'
+    })).toThrow();
+  });
+
   it('rejects a search source cap larger than the full-message cap', () => {
     expect(() => loadConfig({
       ...baseEnv,
