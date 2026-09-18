@@ -3,14 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "vitest run",
     "test:integration": "vitest run tests/integration",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/server.js",
-    "doctor": "npm run build --silent && node dist/src/doctor.js"
+    "doctor": "npm run build --silent && node dist/src/doctor.js",
+    "test:limit": "vitest run tests/limit",
+    "test:provider-pacing": "vitest run tests/integration/provider-pacing-live.integration.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/express": "^2.0.0",

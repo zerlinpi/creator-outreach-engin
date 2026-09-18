@@ -4,7 +4,7 @@ Last updated: 2026-09-17
 
 ## Current state
 
-The v1 connector implementation is feature-complete for the approved scope and is in final verification before limit/load testing.
+The v1 connector implementation is feature-complete for the approved scope. Repository-safe single-replica limit/capacity verification is complete; controlled external mailbox/provider verification is next.
 
 ### Implemented
 
@@ -36,6 +36,8 @@ The v1 connector implementation is feature-complete for the approved scope and i
 - MCP client integration tests for read, send, reply, follow-up, write-policy, idempotency, and batch actions.
 - Opt-in live IMAP test for a non-production mailbox.
 - Opt-in live SMTP send test requiring an owned recipient plus `TEST_MAIL_LIVE_SEND=true`.
+- Repository-safe limit suite covering 500 concurrent MCP reads, 1000 same-key write replays, 1000 distinct concurrent writes to the default idempotency capacity, fail-closed overflow, the 25-message batch ceiling, and JSON-body 413 enforcement.
+- Explicit opt-in provider pacing harness for owned addresses only, with sequential 1–25 message runs and bounded 250–5000 ms delay.
 
 ## Deployment constraint: single replica for v1
 
@@ -64,7 +66,8 @@ These items require credentials/infrastructure and cannot be completed safely in
 - Deploy the MCP service behind HTTPS as one replica.
 - Register the deployed `/mcp` endpoint in an eligible ChatGPT workspace and scan the seven tools.
 - Perform one owned-inbox end-to-end thread test before contacting real creators.
-- Perform bounded limit/load testing only after the final pre-limit code audit is merged and `main` is green.
+- Run controlled provider pacing against owned addresses only (1, 5, 10, then at most 25 messages) and stop on the first provider deferral/rate-limit/timeout anomaly.
+- Treat repository mock-limit results as connector correctness evidence, not as an Alibaba Mail quota or throughput SLA.
 
 ## Scope intentionally not included in v1
 
