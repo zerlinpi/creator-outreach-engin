@@ -18,6 +18,10 @@ export interface SearchCriteria {
   limit?: number;
 }
 
+export function attachImapErrorListener(client: { on(event: 'error', listener: (error: unknown) => void): unknown }): void {
+  client.on('error', () => undefined);
+}
+
 export function buildImapClientOptions(config: AppConfig) {
   return {
     host: config.imap.host,
@@ -102,7 +106,9 @@ export class ImapMailClient {
   constructor(private readonly config: AppConfig) {}
 
   private createClient() {
-    return new ImapFlow(buildImapClientOptions(this.config));
+    const client = new ImapFlow(buildImapClientOptions(this.config));
+    attachImapErrorListener(client);
+    return client;
   }
 
   private async withClient<T>(fn: (client: ImapFlow) => Promise<T>): Promise<T> {
