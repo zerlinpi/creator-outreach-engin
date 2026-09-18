@@ -12,7 +12,8 @@ const app = createHttpApp({
   imap,
   smtp,
   allowedHosts: config.allowedHosts,
-  jsonLimit: config.jsonLimit
+  jsonLimit: config.jsonLimit,
+  oauth: config.oauth
 });
 
 app.listen(config.port, '0.0.0.0', () => {

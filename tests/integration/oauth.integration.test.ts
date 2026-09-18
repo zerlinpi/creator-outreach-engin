@@ -1,0 +1,211 @@
+import { createHash } from 'node:crypto';
+import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
+import { afterEach, describe, expect, it } from 'vitest';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import { createHttpApp } from '../../src/app.js';
+
+const servers: Array<{ close(cb?: (err?: Error) => void): void }> = [];
+
+afterEach(async () => {
+  await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+});
+
+function fakeAdapters() {
+  return {
+    imap: {
+      async listMailboxes() { return []; },
+      async searchEmails() { return []; },
+      async getEmail() { throw new Error('not used'); },
+      async getThread() { return { messages: [], heuristic: false }; }
+    },
+    smtp: {
+      async send() { throw new Error('not used'); }
+    }
+  };
+}
+
+async function startOAuthApp() {
+  const { imap, smtp } = fakeAdapters();
+  const oauth = {
+    issuer: 'https://domail.campxusainc.com',
+    loginPassword: 'oauth-login-password-123',
+    signingSecret: 'oauth-signing-secret-1234567890-abcdef'
+  };
+  const app = createHttpApp({
+    authToken: '1234567890abcdef1234567890abcdef',
+    mailboxAddress: 'campx@example.com',
+    allowedHosts: ['127.0.0.1'],
+    imap: imap as never,
+    smtp: smtp as never,
+    oauth
+  });
+  const server = app.listen(0, '127.0.0.1');
+  servers.push(server);
+  await once(server, 'listening');
+  const { port } = server.address() as AddressInfo;
+  return { baseUrl: `http://127.0.0.1:${port}`, oauth };
+}
+
+describe('OAuth authorization surface', () => {
+  it('publishes discovery metadata and advertises the protected resource on 401', async () => {
+    const { baseUrl, oauth } = await startOAuthApp();
+
+    const resourceResponse = await fetch(`${baseUrl}/.well-known/oauth-protected-resource`);
+    expect(resourceResponse.status).toBe(200);
+    expect(await resourceResponse.json()).toMatchObject({
+      resource: `${oauth.issuer}/mcp`,
+      authorization_servers: [oauth.issuer],
+      scopes_supported: expect.arrayContaining(['mcp:mail', 'offline_access'])
+    });
+
+    const metadataResponse = await fetch(`${baseUrl}/.well-known/oauth-authorization-server`);
+    expect(metadataResponse.status).toBe(200);
+    expect(await metadataResponse.json()).toMatchObject({
+      issuer: oauth.issuer,
+      authorization_endpoint: `${oauth.issuer}/oauth/authorize`,
+      token_endpoint: `${oauth.issuer}/oauth/token`,
+      registration_endpoint: `${oauth.issuer}/oauth/register`,
+      grant_types_supported: ['authorization_code', 'refresh_token'],
+      code_challenge_methods_supported: ['S256']
+    });
+
+    const unauthorized = await fetch(`${baseUrl}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}'
+    });
+    expect(unauthorized.status).toBe(401);
+    expect(unauthorized.headers.get('www-authenticate')).toContain(
+      `resource_metadata="${oauth.issuer}/.well-known/oauth-protected-resource"`
+    );
+  });
+
+  it('completes DCR, PKCE authorization, token exchange, refresh, and MCP tool access', async () => {
+    const { baseUrl } = await startOAuthApp();
+    const redirectUri = 'https://chatgpt.com/aip/callback';
+
+    const registration = await fetch(`${baseUrl}/oauth/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        client_name: 'ChatGPT',
+        redirect_uris: [redirectUri],
+        token_endpoint_auth_method: 'none'
+      })
+    });
+    expect(registration.status).toBe(201);
+    const registered = await registration.json() as { client_id: string };
+    expect(registered.client_id).toMatch(/^mcp\./);
+
+    const verifier = 'A'.repeat(64);
+    const challenge = createHash('sha256').update(verifier).digest('base64url');
+    const authorizeUrl = new URL(`${baseUrl}/oauth/authorize`);
+    authorizeUrl.searchParams.set('response_type', 'code');
+    authorizeUrl.searchParams.set('client_id', registered.client_id);
+    authorizeUrl.searchParams.set('redirect_uri', redirectUri);
+    authorizeUrl.searchParams.set('scope', 'mcp:mail offline_access');
+    authorizeUrl.searchParams.set('state', 'test-state');
+    authorizeUrl.searchParams.set('code_challenge', challenge);
+    authorizeUrl.searchParams.set('code_challenge_method', 'S256');
+
+    const authorize = await fetch(authorizeUrl);
+    expect(authorize.status).toBe(200);
+    const html = await authorize.text();
+    const requestId = /name="request_id" value="([^"]+)"/.exec(html)?.[1];
+    expect(requestId).toBeTruthy();
+
+    const consent = await fetch(`${baseUrl}/oauth/authorize`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        request_id: requestId!,
+        password: 'oauth-login-password-123',
+        decision: 'allow'
+      })
+    });
+    expect(consent.status).toBe(302);
+    const callback = new URL(consent.headers.get('location')!);
+    expect(callback.origin + callback.pathname).toBe(redirectUri);
+    expect(callback.searchParams.get('state')).toBe('test-state');
+    expect(callback.searchParams.get('iss')).toBe('https://domail.campxusainc.com');
+    const code = callback.searchParams.get('code');
+    expect(code).toBeTruthy();
+
+    const token = await fetch(`${baseUrl}/oauth/token`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: registered.client_id,
+        redirect_uri: redirectUri,
+        code: code!,
+        code_verifier: verifier
+      })
+    });
+    expect(token.status).toBe(200);
+    const tokenBody = await token.json() as {
+      access_token: string;
+      refresh_token: string;
+      expires_in: number;
+      scope: string;
+    };
+    expect(tokenBody.access_token).toMatch(/^oa\./);
+    expect(tokenBody.refresh_token).toMatch(/^or\./);
+    expect(tokenBody.expires_in).toBe(3600);
+
+    const replay = await fetch(`${baseUrl}/oauth/token`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: registered.client_id,
+        redirect_uri: redirectUri,
+        code: code!,
+        code_verifier: verifier
+      })
+    });
+    expect(replay.status).toBe(400);
+
+    const refreshed = await fetch(`${baseUrl}/oauth/token`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        client_id: registered.client_id,
+        refresh_token: tokenBody.refresh_token
+      })
+    });
+    expect(refreshed.status).toBe(200);
+    expect(await refreshed.json()).toMatchObject({
+      access_token: expect.stringMatching(/^oa\./),
+      refresh_token: expect.stringMatching(/^or\./),
+      token_type: 'Bearer'
+    });
+
+    const client = new Client(
+      { name: 'oauth-connector-test', version: '1.0.0' },
+      { versionNegotiation: { mode: 'auto' } }
+    );
+    const transport = new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`), {
+      requestInit: { headers: { Authorization: `Bearer ${tokenBody.access_token}` } }
+    });
+    try {
+      await client.connect(transport);
+      const { tools } = await client.listTools();
+      expect(tools.map((tool) => tool.name).sort()).toEqual([
+        'get_email',
+        'get_thread',
+        'list_mailboxes',
+        'reply_email',
+        'search_emails',
+        'send_email',
+        'send_email_batch'
+      ]);
+    } finally {
+      await transport.terminateSession().catch(() => undefined);
+      await client.close();
+    }
+  });
+});

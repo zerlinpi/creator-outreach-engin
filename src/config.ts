@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { OAuthConfig } from './auth/oauth.js';
 
 const PortSchema = z.coerce.number().int().min(1).max(65535);
 const TimeoutSchema = z.coerce.number().int().min(1_000).max(120_000);
@@ -21,6 +22,9 @@ const EnvSchema = z.object({
   CONNECTOR_AUTH_TOKEN: z.string().min(32),
   CONNECTOR_ALLOWED_HOSTS: z.string().optional(),
   CONNECTOR_JSON_LIMIT: z.string().min(1).default('1mb'),
+  OAUTH_ISSUER: z.string().optional(),
+  OAUTH_LOGIN_PASSWORD: z.string().min(16).optional(),
+  OAUTH_SIGNING_SECRET: z.string().min(32).optional(),
   PORT: PortSchema.default(3000)
 });
 
@@ -43,6 +47,7 @@ export interface AppConfig {
   port: number;
   maxMessageBytes: number;
   searchSourceBytes: number;
+  oauth?: OAuthConfig;
   imap: TransportConfig;
   smtp: TransportConfig;
 }
@@ -75,10 +80,40 @@ function validateJsonLimit(value: string): string {
   return normalized;
 }
 
+function parseOAuthConfig(
+  parsed: z.infer<typeof EnvSchema>,
+  allowedHosts?: string[]
+): OAuthConfig | undefined {
+  const values = [parsed.OAUTH_ISSUER, parsed.OAUTH_LOGIN_PASSWORD, parsed.OAUTH_SIGNING_SECRET];
+  const configured = values.filter((value) => Boolean(value)).length;
+  if (configured === 0) return undefined;
+  if (configured !== values.length) {
+    throw new Error('OAUTH_ISSUER, OAUTH_LOGIN_PASSWORD, and OAUTH_SIGNING_SECRET must be configured together.');
+  }
+
+  const issuerUrl = new URL(parsed.OAUTH_ISSUER!);
+  if (issuerUrl.username || issuerUrl.password || issuerUrl.search || issuerUrl.hash || issuerUrl.pathname !== '/') {
+    throw new Error('OAUTH_ISSUER must be an origin URL without credentials, path, query, or fragment.');
+  }
+  if (parsed.NODE_ENV === 'production' && issuerUrl.protocol !== 'https:') {
+    throw new Error('OAUTH_ISSUER must use HTTPS in production.');
+  }
+  if (parsed.NODE_ENV === 'production' && allowedHosts && !allowedHosts.includes(issuerUrl.hostname.toLowerCase())) {
+    throw new Error('OAUTH_ISSUER hostname must be present in CONNECTOR_ALLOWED_HOSTS.');
+  }
+
+  return {
+    issuer: issuerUrl.origin,
+    loginPassword: parsed.OAUTH_LOGIN_PASSWORD!,
+    signingSecret: parsed.OAUTH_SIGNING_SECRET!
+  };
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const parsed = EnvSchema.parse(env);
   const allowedHosts = parseList(parsed.CONNECTOR_ALLOWED_HOSTS);
   const jsonLimit = validateJsonLimit(parsed.CONNECTOR_JSON_LIMIT);
+  const oauth = parseOAuthConfig(parsed, allowedHosts);
 
   if (parsed.NODE_ENV === 'production' && !allowedHosts?.length) {
     throw new Error('CONNECTOR_ALLOWED_HOSTS is required in production.');
@@ -103,6 +138,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     port: parsed.PORT,
     maxMessageBytes: parsed.MAIL_MAX_MESSAGE_BYTES,
     searchSourceBytes: parsed.MAIL_SEARCH_SOURCE_BYTES,
+    oauth,
     imap: {
       host: parsed.MAIL_IMAP_HOST,
       port: parsed.MAIL_IMAP_PORT,
