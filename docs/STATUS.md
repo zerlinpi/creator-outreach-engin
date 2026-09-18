@@ -36,7 +36,8 @@ The v1 connector implementation is feature-complete for the approved scope. Repo
 - MCP client integration tests for read, send, reply, follow-up, write-policy, idempotency, and batch actions.
 - Opt-in live IMAP test for a non-production mailbox.
 - Opt-in live SMTP send test requiring an owned recipient plus `TEST_MAIL_LIVE_SEND=true`.
-- Repository-safe limit suite covering 100 concurrent MCP reads, 100 same-key write replays, 100 distinct concurrent writes, 1000-entry idempotency capacity, the 25-message batch ceiling, and JSON-body 413 enforcement.
+- Repository-safe limit suite covering 500 concurrent MCP reads, 1000 same-key write replays, 1000 distinct concurrent writes to the default idempotency capacity, fail-closed overflow, the 25-message batch ceiling, and JSON-body 413 enforcement.
+- Explicit opt-in provider pacing harness for owned addresses only, with sequential 1–25 message runs and bounded 250–5000 ms delay.
 
 ## Deployment constraint: single replica for v1
 
