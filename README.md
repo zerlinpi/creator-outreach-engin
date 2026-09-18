@@ -50,6 +50,45 @@ Production deployments should also set:
 - `NODE_ENV=production`
 - `CONNECTOR_ALLOWED_HOSTS` — every hostname legitimately used by the reverse proxy/deployment plus loopback when needed for health checks.
 
+### ChatGPT OAuth
+
+To connect the protected MCP endpoint as a ChatGPT custom app using OAuth, configure all three values together:
+
+- `OAUTH_ISSUER` — public HTTPS origin only, for example `https://domail.campxusainc.com`.
+- `OAUTH_LOGIN_PASSWORD` — a separate password used only on the OAuth consent page; minimum 16 characters.
+- `OAUTH_SIGNING_SECRET` — a random signing secret of at least 32 characters. Generate one with `openssl rand -hex 32`.
+
+The connector then exposes:
+
+- `/.well-known/oauth-protected-resource`
+- `/.well-known/oauth-protected-resource/mcp`
+- `/.well-known/oauth-authorization-server`
+- `/oauth/register`
+- `/oauth/authorize`
+- `/oauth/token`
+
+The flow uses OAuth Authorization Code with PKCE S256, dynamic client registration for public clients, one-time authorization codes, one-hour access tokens, 30-day refresh tokens, and `offline_access` discovery. The existing `CONNECTOR_AUTH_TOKEN` remains valid as an operator/compatibility credential; OAuth does not make `/mcp` public.
+
+For the current production domain, a typical configuration is:
+
+```env
+NODE_ENV=production
+CONNECTOR_ALLOWED_HOSTS=domail.campxusainc.com,127.0.0.1
+OAUTH_ISSUER=https://domail.campxusainc.com
+OAUTH_LOGIN_PASSWORD=<separate-strong-password>
+OAUTH_SIGNING_SECRET=<openssl-rand-hex-32-output>
+```
+
+After deployment, verify discovery before creating the ChatGPT app:
+
+```bash
+curl -i https://domail.campxusainc.com/.well-known/oauth-protected-resource
+curl -i https://domail.campxusainc.com/.well-known/oauth-authorization-server
+curl -i -X POST https://domail.campxusainc.com/mcp -H 'Content-Type: application/json' -d '{}'
+```
+
+The first two calls should return JSON with HTTP 200. The unauthenticated MCP call should return HTTP 401 plus a `WWW-Authenticate` header containing the protected-resource metadata URL.
+
 TLS defaults:
 
 - IMAP: `imap.qiye.aliyun.com:993`
