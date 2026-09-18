@@ -166,6 +166,24 @@ npm run test:integration
 
 Optional provider overrides are available as `TEST_MAIL_IMAP_HOST`, `TEST_MAIL_IMAP_PORT`, `TEST_MAIL_SMTP_HOST`, and `TEST_MAIL_SMTP_PORT`. Do not point these tests at the CAMPX production mailbox in CI.
 
+### Controlled provider pacing
+
+After the one-message owned-recipient SMTP test passes, a separate explicit pacing harness can validate small sequential provider runs. It is disabled unless `TEST_MAIL_LIVE_PACING=true` is supplied and it enforces 1–25 messages with a 250–5000 ms delay.
+
+Start with one owned-recipient message:
+
+```bash
+TEST_MAIL_USERNAME=test-mailbox@example.com \\
+TEST_MAIL_APP_PASSWORD=... \\
+TEST_MAIL_RECIPIENT=owned-test-inbox@example.com \\
+TEST_MAIL_LIVE_PACING=true \\
+TEST_MAIL_PACING_COUNT=1 \\
+TEST_MAIL_PACING_DELAY_MS=500 \\
+npm run test:provider-pacing
+```
+
+Only move to counts 5, 10, and then at most 25 when the previous run is clean. This harness must never use creator addresses and is never enabled by CI.
+
 ## CI verification
 
 GitHub Actions verifies the repository with the locked dependency graph and Node.js 22.23.2:
