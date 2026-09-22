@@ -28,6 +28,11 @@ jobs:
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
+      - name: Verify production build shape
+        run: |
+          test -f dist/src/server.js
+          test -f dist/src/admin.js
+          test ! -d dist/tests
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=moderate
       - name: Audit all dependencies
