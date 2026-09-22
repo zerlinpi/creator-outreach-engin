@@ -6,27 +6,47 @@ import { isOAuthAuthorized, oauthChallenge, registerOAuthRoutes, type OAuthConfi
 import type { ImapMailClient } from './mail/imap-client.js';
 import type { SmtpMailClient } from './mail/smtp-client.js';
 import { IdempotencyStore } from './mail/idempotency.js';
+import { MailAccountRegistry, type MailAccountRuntime } from './mail/accounts.js';
 import { registerMailTools } from './tools/register.js';
 
 export interface HttpAppDependencies {
   authToken: string;
-  mailboxAddress: string;
-  imap: ImapMailClient;
-  smtp: SmtpMailClient;
+  accounts?: MailAccountRuntime[];
+  defaultAccount?: string;
+  mailboxAddress?: string;
+  imap?: ImapMailClient;
+  smtp?: SmtpMailClient;
   allowedHosts?: string[];
   jsonLimit?: string;
   oauth?: OAuthConfig;
   idempotencyStore?: IdempotencyStore;
 }
 
+function buildRegistry(deps: HttpAppDependencies): MailAccountRegistry {
+  if (deps.accounts?.length) {
+    return new MailAccountRegistry(deps.accounts, deps.defaultAccount);
+  }
+  if (!deps.mailboxAddress || !deps.imap || !deps.smtp) {
+    throw new Error('Mail account dependencies are required.');
+  }
+  return new MailAccountRegistry([{
+    id: deps.defaultAccount ?? 'default',
+    address: deps.mailboxAddress,
+    fromName: 'Default',
+    imap: deps.imap,
+    smtp: deps.smtp
+  }], deps.defaultAccount ?? 'default');
+}
+
 export function createHttpApp(deps: HttpAppDependencies) {
   const idempotency = deps.idempotencyStore ?? new IdempotencyStore();
+  const registry = buildRegistry(deps);
   const handler = createMcpHandler(() => {
     const server = new McpServer(
-      { name: 'campx-creator-mail', version: '0.1.0' },
+      { name: 'creator-outreach-mail', version: '0.1.0' },
       { capabilities: { tools: {} } }
     );
-    registerMailTools(server, deps.imap, deps.smtp, deps.mailboxAddress, idempotency);
+    registerMailTools(server, registry, idempotency);
     return server;
   });
 
@@ -37,7 +57,7 @@ export function createHttpApp(deps: HttpAppDependencies) {
   });
 
   app.get('/health', (_req, res) => {
-    res.status(200).json({ ok: true, service: 'campx-creator-mail' });
+    res.status(200).json({ ok: true, service: 'creator-outreach-mail' });
   });
 
   if (deps.oauth) {
