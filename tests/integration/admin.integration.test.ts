@@ -44,6 +44,7 @@ describe('Mailbox Manager admin UI', () => {
     const root = 'http://127.0.0.1:' + port;
     const auth = 'Basic ' + Buffer.from('admin:admin-password-1234').toString('base64');
 
+    expect((await fetch(root + '/favicon.ico')).status).toBe(204);
     expect((await fetch(root + '/admin')).status).toBe(401);
     const adminPage = await fetch(root + '/admin', { headers: { authorization: auth } });
     expect(adminPage.status).toBe(200);
