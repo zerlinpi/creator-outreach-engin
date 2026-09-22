@@ -75,6 +75,10 @@ export function createHttpApp(deps: HttpAppDependencies) {
   // Trust forwarding headers only when the immediate proxy is loopback (for example local Nginx).
   app.set('trust proxy', 'loopback');
 
+  app.get('/favicon.ico', (_req, res) => {
+    res.status(204).end();
+  });
+
   app.get('/health', (_req, res) => {
     res.status(200).json({ ok: true, service: 'campx-creator-mail' });
   });
