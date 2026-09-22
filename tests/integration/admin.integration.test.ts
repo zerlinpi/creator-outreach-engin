@@ -51,9 +51,12 @@ describe('Mailbox Manager admin UI', () => {
     expect(adminPage.headers.get('x-frame-options')).toBe('DENY');
 
     const adminHtml = await adminPage.text();
-    const scriptMatch = adminHtml.match(/<script>([\\s\\S]*?)<\\/script>/);
-    expect(scriptMatch).not.toBeNull();
-    expect(() => new Script(scriptMatch![1])).not.toThrow();
+    const scriptStart = adminHtml.indexOf('<script>');
+    const scriptEnd = adminHtml.indexOf('</script>', scriptStart);
+    expect(scriptStart).toBeGreaterThanOrEqual(0);
+    expect(scriptEnd).toBeGreaterThan(scriptStart);
+    const adminScript = adminHtml.slice(scriptStart + '<script>'.length, scriptEnd);
+    expect(() => new Script(adminScript)).not.toThrow();
 
     const created = await fetch(root + '/admin/api/accounts', {
       method: 'POST',
