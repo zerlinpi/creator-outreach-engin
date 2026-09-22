@@ -243,11 +243,13 @@ Endpoints:
 
 ## Mail doctor
 
-Run:
+After a production build, run:
 
 ```bash
 npm run doctor
 ```
+
+This command now uses the existing `dist/` build and does not delete/rebuild production artifacts. For local development, use `npm run doctor:build` to rebuild first.
 
 The doctor checks every configured account separately:
 
