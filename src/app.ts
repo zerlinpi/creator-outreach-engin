@@ -43,7 +43,7 @@ export function createHttpApp(deps: HttpAppDependencies) {
   const registry = buildRegistry(deps);
   const handler = createMcpHandler(() => {
     const server = new McpServer(
-      { name: 'creator-outreach-mail', version: '0.1.0' },
+      { name: 'campx-creator-mail', version: '0.1.0' },
       { capabilities: { tools: {} } }
     );
     registerMailTools(server, registry, idempotency);
@@ -57,7 +57,7 @@ export function createHttpApp(deps: HttpAppDependencies) {
   });
 
   app.get('/health', (_req, res) => {
-    res.status(200).json({ ok: true, service: 'creator-outreach-mail' });
+    res.status(200).json({ ok: true, service: 'campx-creator-mail' });
   });
 
   if (deps.oauth) {
