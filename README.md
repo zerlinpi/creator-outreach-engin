@@ -6,7 +6,7 @@ The connector now supports multiple isolated sender mailboxes behind one MCP end
 
 ## Mailbox Manager UI (recommended)
 
-Version **0.3.0** hardens the browser mailbox manager so the server does not need one environment-variable block per mailbox.
+Version **0.3.2** hardens the browser mailbox manager so the server does not need one environment-variable block per mailbox.
 
 Configure only the admin/encryption secrets:
 
@@ -233,6 +233,8 @@ npm run build
 npm start
 ```
 
+`npm start` loads `.env` automatically when it exists (Node 22.12+); externally injected environment variables still take precedence.
+
 Endpoints:
 
 - Liveness: `GET /health`
@@ -300,6 +302,8 @@ npm run test:provider-pacing
 ```
 
 Increase only through 1 → 5 → 10 → 25 after each previous run is clean.
+
+Production builds compile only `src/`; compiled test artifacts are excluded from `dist/`, and Vitest ignores stale `dist/` trees from previous deployments.
 
 ## CI verification
 
