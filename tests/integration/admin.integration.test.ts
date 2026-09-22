@@ -44,7 +44,10 @@ describe('Mailbox Manager admin UI', () => {
     const auth = 'Basic ' + Buffer.from('admin:admin-password-1234').toString('base64');
 
     expect((await fetch(root + '/admin')).status).toBe(401);
-    expect((await fetch(root + '/admin', { headers: { authorization: auth } })).status).toBe(200);
+    const adminPage = await fetch(root + '/admin', { headers: { authorization: auth } });
+    expect(adminPage.status).toBe(200);
+    expect(adminPage.headers.get('cache-control')).toBe('no-store');
+    expect(adminPage.headers.get('x-frame-options')).toBe('DENY');
 
     const created = await fetch(root + '/admin/api/accounts', {
       method: 'POST',
@@ -61,6 +64,17 @@ describe('Mailbox Manager admin UI', () => {
       })
     });
     expect(created.status).toBe(201);
+
+    const crossOrigin = await fetch(root + '/admin/api/default', {
+      method: 'POST',
+      headers: {
+        authorization: auth,
+        origin: 'https://evil.example',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ id: 'brand10' })
+    });
+    expect(crossOrigin.status).toBe(403);
     expect(registry.resolve('brand10').address).toBe('mail@brand10.example');
 
     const listing = await (await fetch(root + '/admin/api/accounts', { headers: { authorization: auth } })).json() as any;
