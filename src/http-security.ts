@@ -60,7 +60,7 @@ export class FailureRateLimiter {
 }
 
 export function requestClientKey(req: Request): string {
-  return req.socket.remoteAddress ?? 'unknown';
+  return req.ip || req.socket.remoteAddress || 'unknown';
 }
 
 export function applySensitiveHeaders(res: Response): void {
