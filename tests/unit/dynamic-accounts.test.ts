@@ -15,7 +15,9 @@ describe('dynamic MailAccountRegistry', () => {
     for (let index = 0; index < 12; index += 1) registry.upsert(runtime('brand' + index));
     expect(registry.size).toBe(12);
     registry.setDefault('brand9');
-    expect(registry.resolve().id).toBe('brand9');
+    expect(registry.defaultAccountId).toBe('brand9');
+    expect(() => registry.resolve()).toThrowError(expect.objectContaining({ code: 'ACCOUNT_REQUIRED' }));
+    expect(registry.resolve('brand9').id).toBe('brand9');
     registry.remove('brand9');
     expect(registry.size).toBe(11);
     expect(registry.defaultAccountId).not.toBe('brand9');
