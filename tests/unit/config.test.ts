@@ -16,6 +16,38 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...baseEnv, CONNECTOR_AUTH_TOKEN: 'too-short-token' })).toThrow();
   });
 
+  it('treats blank optional environment values as unset', () => {
+    const config = loadConfig({
+      ...baseEnv,
+      MAIL_ADMIN_PASSWORD: '',
+      MAIL_ACCOUNT_STORE_KEY: '',
+      MAIL_MESSAGE_REF_SIGNING_KEY: '',
+      MAIL_DEFAULT_ACCOUNT: '',
+      CONNECTOR_ALLOWED_HOSTS: '',
+      OAUTH_ISSUER: '',
+      OAUTH_LOGIN_PASSWORD: '',
+      OAUTH_SIGNING_SECRET: ''
+    });
+    expect(config.mailAdmin).toBeUndefined();
+    expect(config.oauth).toBeUndefined();
+    expect(config.allowedHosts).toBeUndefined();
+    expect(config.defaultAccount).toBe('default');
+  });
+
+  it('still rejects partially configured optional feature blocks', () => {
+    expect(() => loadConfig({
+      ...baseEnv,
+      MAIL_ADMIN_PASSWORD: 'admin-password-1234',
+      MAIL_ACCOUNT_STORE_KEY: ''
+    })).toThrow();
+    expect(() => loadConfig({
+      ...baseEnv,
+      OAUTH_ISSUER: 'https://domail.campxusainc.com',
+      OAUTH_LOGIN_PASSWORD: '',
+      OAUTH_SIGNING_SECRET: ''
+    })).toThrow();
+  });
+
   it('uses secure Alibaba Mail and bounded resource defaults', () => {
     const config = loadConfig(baseEnv);
     expect(config.imap).toMatchObject({
