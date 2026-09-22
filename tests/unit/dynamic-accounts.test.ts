@@ -23,6 +23,32 @@ describe('dynamic MailAccountRegistry', () => {
     expect(registry.defaultAccountId).not.toBe('brand9');
   });
 
+  it('deactivates old runtime clients when an account is replaced or removed', () => {
+    let imapDisabled = 0;
+    let smtpDisabled = 0;
+    const old = {
+      id: 'campx',
+      address: 'old@example.com',
+      fromName: 'OLD',
+      source: 'ui' as const,
+      imap: { disable() { imapDisabled += 1; } } as never,
+      smtp: { disable() { smtpDisabled += 1; } } as never
+    };
+    const replacement = runtime('campx');
+    const registry = new MailAccountRegistry([old], 'campx');
+    registry.upsert(replacement);
+    expect(imapDisabled).toBe(1);
+    expect(smtpDisabled).toBe(1);
+
+    let replacementImapDisabled = 0;
+    let replacementSmtpDisabled = 0;
+    replacement.imap = { disable() { replacementImapDisabled += 1; } } as never;
+    replacement.smtp = { disable() { replacementSmtpDisabled += 1; } } as never;
+    registry.remove('campx');
+    expect(replacementImapDisabled).toBe(1);
+    expect(replacementSmtpDisabled).toBe(1);
+  });
+
   it('keeps account-scoped message refs isolated', () => {
     const registry = new MailAccountRegistry([runtime('campx'), runtime('hassky')], 'campx');
     const ref = encodeMessageRef('INBOX', 42, 99, 'hassky');
