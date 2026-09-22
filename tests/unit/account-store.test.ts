@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -61,6 +61,41 @@ describe('EncryptedAccountStore', () => {
     const loaded = await store.loadAll(base());
     expect(loaded.accounts).toHaveLength(20);
     expect(new Set(loaded.accounts.map((account) => account.id)).size).toBe(20);
+  });
+
+  it('rejects malformed or duplicate persisted mailbox records before runtime use', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'mail-store-')); dirs.push(dir);
+    const path = join(dir, 'accounts.json');
+    const store = new EncryptedAccountStore(path, '0123456789abcdef0123456789abcdef', 10);
+    await store.upsert({
+      id: 'campx',
+      username: 'mail@campx.example',
+      appPassword: 'secret-password',
+      fromName: 'CAMPX',
+      imapHost: 'imap.example.com',
+      imapPort: 993,
+      smtpHost: 'smtp.example.com',
+      smtpPort: 465
+    });
+
+    const original = JSON.parse(await readFile(path, 'utf8'));
+    await writeFile(path, JSON.stringify({
+      ...original,
+      accounts: [original.accounts[0], { ...original.accounts[0] }]
+    }));
+    await expect(store.loadAll(base())).rejects.toThrow(/Duplicate mailbox account id/);
+
+    await writeFile(path, JSON.stringify({
+      ...original,
+      accounts: [{ ...original.accounts[0], imapHost: 'https://imap.example.com' }]
+    }));
+    await expect(store.loadAll(base())).rejects.toThrow();
+
+    await writeFile(path, JSON.stringify({
+      ...original,
+      accounts: [{ ...original.accounts[0], fromName: 'Bad\r\nBcc: attacker@example.com' }]
+    }));
+    await expect(store.loadAll(base())).rejects.toThrow();
   });
 
   it('supports password-preserving edits and an external default account id', async () => {
