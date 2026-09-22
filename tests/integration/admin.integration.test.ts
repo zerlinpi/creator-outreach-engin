@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Script } from 'node:vm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createHttpApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config.js';
@@ -48,6 +49,11 @@ describe('Mailbox Manager admin UI', () => {
     expect(adminPage.status).toBe(200);
     expect(adminPage.headers.get('cache-control')).toBe('no-store');
     expect(adminPage.headers.get('x-frame-options')).toBe('DENY');
+
+    const adminHtml = await adminPage.text();
+    const scriptMatch = adminHtml.match(/<script>([\\s\\S]*?)<\\/script>/);
+    expect(scriptMatch).not.toBeNull();
+    expect(() => new Script(scriptMatch![1])).not.toThrow();
 
     const created = await fetch(root + '/admin/api/accounts', {
       method: 'POST',
