@@ -14,5 +14,5 @@ const app = createHttpApp({
 });
 
 app.listen(config.port, '0.0.0.0', () => {
-  console.log('creator-outreach-mail listening on :' + config.port);
+  console.log('campx-creator-mail listening on :' + config.port);
 });
