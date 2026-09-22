@@ -13,13 +13,21 @@ export class FailureRateLimiter {
     private readonly maxFailures: number,
     private readonly windowMs: number,
     private readonly blockMs: number,
-    private readonly now: () => number = Date.now
+    private readonly now: () => number = Date.now,
+    private readonly maxKeys = 5000
   ) {
     if (maxFailures < 1 || windowMs < 1 || blockMs < 1) throw new Error('Invalid failure limiter policy.');
   }
 
+  private prune(current = this.now()): void {
+    for (const [key, state] of this.states) {
+      if (state.blockedUntil <= current && current - state.windowStartedAt >= this.windowMs) this.states.delete(key);
+    }
+  }
+
   check(key: string): { allowed: boolean; retryAfterSeconds?: number } {
     const current = this.now();
+    this.prune(current);
     const state = this.states.get(key);
     if (!state) return { allowed: true };
     if (state.blockedUntil > current) {
@@ -31,6 +39,11 @@ export class FailureRateLimiter {
 
   failure(key: string): void {
     const current = this.now();
+    this.prune(current);
+    if (!this.states.has(key) && this.states.size >= this.maxKeys) {
+      const oldest = this.states.keys().next().value as string | undefined;
+      if (oldest) this.states.delete(oldest);
+    }
     const existing = this.states.get(key);
     const state = !existing || current - existing.windowStartedAt >= this.windowMs
       ? { count: 0, windowStartedAt: current, blockedUntil: 0 }
