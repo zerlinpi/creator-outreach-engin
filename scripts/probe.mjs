@@ -30,6 +30,32 @@ await expectStatus('/favicon.ico', 204);
 const adminEnabled = Boolean(process.env.MAIL_ADMIN_PASSWORD && process.env.MAIL_ACCOUNT_STORE_KEY);
 await expectStatus('/admin', adminEnabled ? 401 : 404);
 
+if (adminEnabled) {
+  const authorization = 'Basic ' + Buffer.from('admin:' + process.env.MAIL_ADMIN_PASSWORD).toString('base64');
+  const adminPage = await expectStatus('/admin', 200, { headers: { authorization } });
+  if (adminPage) {
+    const csp = adminPage.headers.get('content-security-policy') || '';
+    if (!csp.includes("script-src 'self'") || csp.includes("script-src 'self' 'unsafe-inline'")) {
+      failures.push('/admin: unexpected script CSP');
+    }
+    const html = await adminPage.text();
+    if (!html.includes('<script src="/admin/app.js" defer></script>')) failures.push('/admin: external script tag missing');
+    if (/\son(?:click|change)=/i.test(html)) failures.push('/admin: inline event handler found');
+  }
+
+  await expectStatus('/admin/app.js', 401);
+  const adminScript = await expectStatus('/admin/app.js', 200, { headers: { authorization } });
+  if (adminScript) {
+    const script = await adminScript.text();
+    try {
+      new Function(script);
+    } catch {
+      failures.push('/admin/app.js: JavaScript syntax check failed');
+    }
+    if (script.includes('innerHTML')) failures.push('/admin/app.js: unsafe innerHTML rendering found');
+  }
+}
+
 if (process.env.OAUTH_ISSUER) {
   await expectStatus('/.well-known/oauth-protected-resource', 200);
   await expectStatus('/.well-known/oauth-protected-resource/mcp', 200);
