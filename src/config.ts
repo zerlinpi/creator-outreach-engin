@@ -30,6 +30,7 @@ const EnvSchema = z.object({
   MAIL_SOCKET_TIMEOUT_MS: TimeoutSchema.default(30_000),
   MAIL_MAX_MESSAGE_BYTES: ByteSizeSchema.default(10 * 1024 * 1024),
   MAIL_SEARCH_SOURCE_BYTES: ByteSizeSchema.default(128 * 1024),
+  MAIL_MESSAGE_REF_SIGNING_KEY: z.string().min(32).optional(),
   MAIL_ALL_ACCOUNT_READ_CONCURRENCY: ReadConcurrencySchema.default(4),
   MAIL_MULTI_ACCOUNT_SEND_CONCURRENCY: SendConcurrencySchema.default(3),
   MAIL_ADMIN_PASSWORD: z.string().min(16).optional(),
@@ -258,7 +259,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const jsonLimit = validateJsonLimit(parsed.CONNECTOR_JSON_LIMIT);
   const oauth = parseOAuthConfig(parsed, allowedHosts);
   const mailAdmin = parseAdminConfig(parsed);
-  const messageRefSecret = createHmac('sha256', parsed.CONNECTOR_AUTH_TOKEN)
+  const messageRefSecret = createHmac('sha256', parsed.MAIL_MESSAGE_REF_SIGNING_KEY ?? parsed.CONNECTOR_AUTH_TOKEN)
     .update('creator-outreach-message-ref-v1')
     .digest('hex');
 
