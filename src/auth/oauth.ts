@@ -157,7 +157,9 @@ function verifySignedToken(token: string, prefix: 'oa.' | 'or.', expectedType: '
 
 export function isOAuthAuthorized(header: string | undefined, config?: OAuthConfig): boolean {
   if (!config || !header?.startsWith('Bearer ')) return false;
-  return verifySignedToken(header.slice(7), 'oa.', 'access', config) !== null;
+  const payload = verifySignedToken(header.slice(7), 'oa.', 'access', config);
+  if (!payload) return false;
+  return payload.scope.split(/\s+/).includes('mcp:mail');
 }
 
 export function oauthChallenge(config: OAuthConfig): string {
