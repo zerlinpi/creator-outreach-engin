@@ -50,20 +50,26 @@ describe('Mailbox Manager admin UI', () => {
     expect(adminPage.status).toBe(200);
     expect(adminPage.headers.get('cache-control')).toBe('no-store');
     expect(adminPage.headers.get('x-frame-options')).toBe('DENY');
+    const csp = adminPage.headers.get('content-security-policy') ?? '';
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");
 
     const adminHtml = await adminPage.text();
-    const scriptStart = adminHtml.indexOf('<script>');
-    const scriptEnd = adminHtml.indexOf('</script>', scriptStart);
-    expect(scriptStart).toBeGreaterThanOrEqual(0);
-    expect(scriptEnd).toBeGreaterThan(scriptStart);
-    const adminScript = adminHtml.slice(scriptStart + '<script>'.length, scriptEnd);
-    expect(() => new Script(adminScript)).not.toThrow();
     expect(adminHtml).not.toContain(' onclick=');
     expect(adminHtml).not.toContain(' onchange=');
-    expect(adminHtml).toContain("actionButton('Test','test'");
-    expect(adminHtml).not.toContain('cards.innerHTML');
+    expect(adminHtml).not.toContain('<script>');
+    expect(adminHtml).toContain('<script src="/admin/app.js" defer></script>');
     expect(adminHtml).toContain('id="addMailbox"');
     expect(adminHtml).toContain('id="cancelDialog"');
+
+    expect((await fetch(root + '/admin/app.js')).status).toBe(401);
+    const scriptResponse = await fetch(root + '/admin/app.js', { headers: { authorization: auth } });
+    expect(scriptResponse.status).toBe(200);
+    expect(scriptResponse.headers.get('content-type')).toContain('application/javascript');
+    const adminScript = await scriptResponse.text();
+    expect(() => new Script(adminScript)).not.toThrow();
+    expect(adminScript).toContain("actionButton('Test','test'");
+    expect(adminScript).not.toContain('innerHTML');
 
     const browserElements = new Map<string, BrowserElement>();
     const browserListeners = new Map<string, Map<string, (...args: any[]) => unknown>>();
