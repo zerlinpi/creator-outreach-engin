@@ -98,7 +98,11 @@ export interface AppConfig extends MailRuntimeConfig {
 }
 
 function isSafeHost(value: string): boolean {
-  return value.length <= 253 && !value.includes('://') && !/[/*]/.test(value) && !value.includes(':');
+  return value.length <= 253 &&
+    /^[A-Za-z0-9.-]+$/.test(value) &&
+    !value.includes('..') &&
+    !value.startsWith('.') &&
+    !value.endsWith('.');
 }
 
 function parseList(value?: string): string[] | undefined {
