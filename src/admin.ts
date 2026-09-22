@@ -136,6 +136,13 @@ export function registerMailboxAdmin(
   baseConfig: AppConfig
 ): void {
   const auth = adminAuth(admin.password);
+  let mutationTail: Promise<void> = Promise.resolve();
+  const mutate = <T>(operation: () => Promise<T>): Promise<T> => {
+    const run = mutationTail.then(operation, operation);
+    mutationTail = run.then(() => undefined, () => undefined);
+    return run;
+  };
+
   app.get('/admin', auth, (_req, res) => res.type('html').send(html()));
   app.use('/admin/api', auth, (req, res, next) => {
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && !isSameOriginMutation(req)) {
@@ -159,21 +166,24 @@ export function registerMailboxAdmin(
   app.post('/admin/api/accounts', async (req, res) => {
     try {
       const input = AccountInput.parse(req.body);
-      const existingRuntime = registry.list().find((account) => account.id === input.id);
-      if (existingRuntime?.source === 'environment') return res.status(409).json({ error: 'Environment-managed accounts are read-only in the UI.' });
+      const outcome = await mutate(async () => {
+        const existingRuntime = registry.list().find((account) => account.id === input.id);
+        if (existingRuntime?.source === 'environment') return { status: 409, body: { error: 'Environment-managed accounts are read-only in the UI.' } };
 
-      const existing = await store.get(input.id);
-      const appPassword = input.appPassword || existing?.appPassword;
-      if (!appPassword) return res.status(400).json({ error: 'Password is required for a new mailbox.' });
+        const existing = await store.get(input.id);
+        const appPassword = input.appPassword || existing?.appPassword;
+        if (!appPassword) return { status: 400, body: { error: 'Password is required for a new mailbox.' } };
 
-      const complete = { ...input, appPassword };
-      await store.upsert(complete);
-      registry.upsert(createMailAccountRuntime(toConfig(complete, baseConfig), 'ui'));
-      if (!registry.defaultAccountId) {
-        registry.setDefault(input.id);
-        await store.setDefault(input.id);
-      }
-      res.status(existing ? 200 : 201).json({ ok: true, account: input.id });
+        const complete = { ...input, appPassword };
+        await store.upsert(complete);
+        registry.upsert(createMailAccountRuntime(toConfig(complete, baseConfig), 'ui'));
+        if (!registry.defaultAccountId) {
+          registry.setDefault(input.id);
+          await store.setDefault(input.id);
+        }
+        return { status: existing ? 200 : 201, body: { ok: true, account: input.id } };
+      });
+      res.status(outcome.status).json(outcome.body);
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid mailbox configuration.' });
     }
@@ -182,13 +192,16 @@ export function registerMailboxAdmin(
   app.delete('/admin/api/accounts/:id', async (req, res) => {
     try {
       const id = req.params.id;
-      const runtime = registry.list().find((account) => account.id === id);
-      if (!runtime) return res.status(404).json({ error: 'Mailbox not found.' });
-      if (runtime.source === 'environment') return res.status(409).json({ error: 'Environment-managed accounts are read-only in the UI.' });
-      await store.remove(id);
-      registry.remove(id);
-      if (registry.defaultAccountId) await store.setDefault(registry.defaultAccountId);
-      res.json({ ok: true });
+      const outcome = await mutate(async () => {
+        const runtime = registry.list().find((account) => account.id === id);
+        if (!runtime) return { status: 404, body: { error: 'Mailbox not found.' } };
+        if (runtime.source === 'environment') return { status: 409, body: { error: 'Environment-managed accounts are read-only in the UI.' } };
+        await store.remove(id);
+        registry.remove(id);
+        if (registry.defaultAccountId) await store.setDefault(registry.defaultAccountId);
+        return { status: 200, body: { ok: true } };
+      });
+      res.status(outcome.status).json(outcome.body);
     } catch {
       res.status(500).json({ error: 'Mailbox configuration could not be deleted.' });
     }
@@ -197,8 +210,10 @@ export function registerMailboxAdmin(
   app.post('/admin/api/default', async (req, res) => {
     try {
       const id = z.object({ id: z.string() }).parse(req.body).id;
-      registry.setDefault(id);
-      await store.setDefault(id);
+      await mutate(async () => {
+        registry.setDefault(id);
+        await store.setDefault(id);
+      });
       res.json({ ok: true, defaultAccount: id });
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid default account.' });
