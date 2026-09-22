@@ -60,44 +60,80 @@ describe('Mailbox Manager admin UI', () => {
     expect(() => new Script(adminScript)).not.toThrow();
     expect(adminHtml).not.toContain(' onclick=');
     expect(adminHtml).not.toContain(' onchange=');
-    expect(adminHtml).toContain('data-action="test"');
+    expect(adminHtml).toContain("actionButton('Test','test'");
+    expect(adminHtml).not.toContain('cards.innerHTML');
     expect(adminHtml).toContain('id="addMailbox"');
     expect(adminHtml).toContain('id="cancelDialog"');
 
-    const browserElements = new Map<string, any>();
+    const browserElements = new Map<string, BrowserElement>();
     const browserListeners = new Map<string, Map<string, (...args: any[]) => unknown>>();
+    class BrowserElement {
+      id = '';
+      value = '';
+      disabled = false;
+      textContent = '';
+      className = '';
+      type = '';
+      dataset: Record<string, string> = {};
+      children: BrowserElement[] = [];
+      private listeners = new Map<string, (...args: any[]) => unknown>();
+
+      constructor(public readonly tagName = 'div') {}
+
+      reset() {}
+      showModal() {}
+      close() {}
+      append(...nodes: BrowserElement[]) { this.children.push(...nodes); }
+      replaceChildren(...nodes: BrowserElement[]) { this.children = [...nodes]; }
+      addEventListener(type: string, handler: (...args: any[]) => unknown) { this.listeners.set(type, handler); }
+      getAttribute(name: string) {
+        if (name === 'data-id') return this.dataset.id ?? null;
+        if (name === 'data-action') return this.dataset.action ?? null;
+        return null;
+      }
+      closest() { return null; }
+      hasListener(type: string) { return this.listeners.has(type); }
+    }
     const elementFor = (elementId: string) => {
       if (!browserElements.has(elementId)) {
-        const listeners = new Map<string, (...args: any[]) => unknown>();
-        browserListeners.set(elementId, listeners);
-        browserElements.set(elementId, {
-          id: elementId,
-          value: '',
-          disabled: false,
-          textContent: '',
-          innerHTML: '',
-          dataset: {},
-          reset() {},
-          showModal() {},
-          close() {},
-          addEventListener(type: string, handler: (...args: any[]) => unknown) { listeners.set(type, handler); },
-          getAttribute() { return null; },
-          closest() { return null; }
-        });
+        const element = new BrowserElement();
+        element.id = elementId;
+        browserElements.set(elementId, element);
+        browserListeners.set(elementId, new Map());
+        const originalAdd = element.addEventListener.bind(element);
+        element.addEventListener = (type: string, handler: (...args: any[]) => unknown) => {
+          browserListeners.get(elementId)!.set(type, handler);
+          originalAdd(type, handler);
+        };
       }
-      return browserElements.get(elementId);
+      return browserElements.get(elementId)!;
     };
-    class BrowserElement {}
+    const browserAccount = {
+      id: 'browser10',
+      username: 'mail@browser10.example',
+      fromName: '<b>Browser Brand</b>',
+      source: 'ui',
+      imapHost: 'imap.browser10.example',
+      imapPort: 993,
+      smtpHost: 'smtp.browser10.example',
+      smtpPort: 465,
+      smtpSecurity: 'tls'
+    };
     const browserContext = {
-      document: { getElementById: (elementId: string) => elementFor(elementId) },
+      document: {
+        getElementById: (elementId: string) => elementFor(elementId),
+        createElement: (tagName: string) => new BrowserElement(tagName)
+      },
       Element: BrowserElement,
-      fetch: async () => ({ ok: true, json: async () => ({ accounts: [] }) }),
+      fetch: async () => ({ ok: true, json: async () => ({ accounts: [browserAccount] }) }),
       confirm: () => true,
       console
     };
     expect(() => new Script(adminScript).runInNewContext(browserContext)).not.toThrow();
     await new Promise((resolve) => setImmediate(resolve));
-    expect(elementFor('summary').textContent).toBe('0 configured mailbox(es)');
+    expect(elementFor('summary').textContent).toBe('1 configured mailbox(es)');
+    expect(elementFor('cards').children).toHaveLength(1);
+    expect(elementFor('cards').children[0].children[2].textContent).toBe('<b>Browser Brand</b>');
     expect(browserListeners.get('addMailbox')?.has('click')).toBe(true);
     expect(browserListeners.get('provider')?.has('change')).toBe(true);
     expect(browserListeners.get('form')?.has('submit')).toBe(true);
