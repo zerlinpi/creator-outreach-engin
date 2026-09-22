@@ -18,7 +18,7 @@ const AccountSchema = z.object({
   smtpSecurity: SmtpSecuritySchema.default('tls')
 });
 
-export type ManagedAccountInput = z.infer<typeof AccountSchema>;
+export type ManagedAccountInput = z.input<typeof AccountSchema>;
 
 interface EncryptedSecret {
   iv: string;
