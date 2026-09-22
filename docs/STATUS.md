@@ -1,83 +1,55 @@
-# Creator Outreach Connector Status
+# Creator Outreach Engine Status
 
-Last updated: 2026-09-17
+Last updated: 2026-09-22
 
-## Current state
+## Current release target
 
-The v1 connector implementation is feature-complete for the approved scope. Repository-safe single-replica limit/capacity verification is complete; controlled external mailbox/provider verification is next.
+v0.3.0 is the production-hardening release for many-mailbox operation. The connector keeps the seven-tool MCP surface while adding a browser Mailbox Manager and fail-closed account isolation suitable for roughly 10–50 configured mailboxes.
 
-### Implemented
+## Implemented and repository-verified
 
-- Remote MCP HTTP service for ChatGPT custom apps.
-- Bearer authentication with constant-time token comparison.
-- Host allowlist and JSON request size constrained to 32 KiB–2 MiB (1 MiB default).
-- Alibaba Mail IMAP TLS access.
-- Alibaba Mail SMTP TLS sending.
-- Mailbox discovery and portable `INBOX` / `SENT` aliases.
-- Compact email search results with bounded IMAP source fetches.
-- Full email reads with a configured source-size cap and opt-in sanitized HTML.
-- IMAP message references bound to mailbox `UIDVALIDITY` so stale UIDs are rejected after mailbox identity changes.
-- RFC thread reconstruction across Inbox and Sent with subject/participant fallback when RFC linkage is incomplete.
-- Repeated `Re:` / `Fw:` / `Fwd:` prefixes are fully normalized before cross-folder thread lookup.
-- `Reply-To`, `Message-ID`, `In-Reply-To`, and `References` handling.
-- Replying from inbound messages and continuing follow-up from previously sent CAMPX messages.
-- Individual outbound email sending.
-- A shared SMTP envelope-recipient cap that also protects generated reply/reply-all messages.
-- SMTP sends fail when the primary creator recipient is rejected even if a copied recipient was accepted.
-- Separate personalized batch sends with default max 10 / hard max 25.
-- Sequential batch throttling; automatic transient retry is disabled by default and can be explicitly enabled for at most one bounded retry.
-- Per-item batch results so failed creators can be identified independently.
-- Required idempotency keys for real write actions, including result/failure replay protection during the configured TTL.
-- Idempotency capacity fails closed rather than evicting unexpired protection records; expired entries are pruned before new capacity is admitted.
-- Safe error normalization without raw credentials/provider traces.
-- Deployment doctor for IMAP/SMTP connectivity and Sent-folder detection.
-- Docker non-root production image and health check, with the Node 22 Alpine base image pinned by digest for reproducible builds.
-- Production and full dependency audits in CI at `moderate` severity threshold.
-- MCP client integration tests for read, send, reply, follow-up, write-policy, idempotency, and batch actions.
-- Opt-in live IMAP test for a non-production mailbox.
-- Opt-in live SMTP send test requiring an owned recipient plus `TEST_MAIL_LIVE_SEND=true`.
-- Repository-safe limit suite covering 500 concurrent MCP reads, 1000 same-key write replays, 1000 distinct concurrent writes to the default idempotency capacity, fail-closed overflow, the 25-message batch ceiling, and JSON-body 413 enforcement.
-- Explicit opt-in provider pacing harness for owned addresses only, with sequential 1–25 message runs and bounded 250–5000 ms delay.
+- Dynamic UI-managed mailbox registry with AES-256-GCM credential storage.
+- Environment-managed mailbox compatibility.
+- Explicit account identity on cross-mailbox read/send results.
+- `ACCOUNT_REQUIRED` for ambiguous reads/writes when multiple mailboxes exist.
+- `ACCOUNT_MISMATCH` protection for cross-account reply attempts.
+- HMAC-signed message refs binding account + mailbox + UIDVALIDITY + UID.
+- Gated migration support for unsigned v0.2 refs.
+- Bounded all-account IMAP fan-out and configurable per-account IMAP concurrency.
+- Bounded multi-account send fan-out and serialized SMTP sends within each account.
+- Runtime invalidation when a mailbox is edited or deleted, so queued work does not continue with stale credentials/identity.
+- Alibaba/Gmail implicit TLS SMTP plus STARTTLS mode for providers such as Microsoft 365.
+- Atomic/serialized Mailbox Manager mutations across encrypted storage and runtime registry.
+- Admin no-store/frame-deny/cross-origin-write protections plus failed-auth throttling.
+- OAuth PKCE, required `mcp:mail` scope, authorization/token throttling, bounded transient state, and rotating refresh tokens with in-process replay rejection.
+- Process liveness at `/health` and mailbox readiness at `/ready`.
+- Bounded JSON/message/batch/idempotency limits.
+- Non-root pinned-base Docker image and dependency audits in CI.
+- Repository-safe high-water tests for MCP reads, idempotency replays/capacity, batch ceilings, and request-size enforcement.
 
-## Deployment constraint: single replica for v1
+## Production constraints still in force
 
-The current idempotency store is process-local memory. Its duplicate-send protection is therefore guaranteed only within one running connector process. Until a shared durable idempotency backend is added, production and limit/load testing must run the connector as a **single replica / single process** behind the public endpoint.
+The idempotency store is process-local. Production should remain **single replica / single process** until a shared Redis/database-backed idempotency backend is implemented. A restart clears idempotency replay state.
 
-Do not horizontally scale the MCP service across multiple replicas behind a load balancer while relying on current idempotency guarantees: the same idempotency key could reach different processes. A process restart also clears the in-memory replay cache, so controlled test sends should use owned recipients and should not be blindly retried with a new key after ambiguous/partial delivery.
+OAuth refresh-token replay tracking is also process-local. Token signatures remain valid across restarts, so durable refresh-token rotation/revocation requires a persistent token-state backend if that becomes a requirement.
 
-## Automated verification gate
+Mailbox Manager encrypted storage is file-based and is protected for one process. Persist `/app/data` and do not mount the same file writable from multiple replicas.
 
-Every feature-branch CI run must pass:
+## External verification still required
 
-1. Unit and integration tests.
-2. TypeScript typecheck.
-3. Production build.
-4. `npm audit --omit=dev --audit-level=moderate`.
-5. `npm audit --audit-level=moderate`.
-6. Production Docker image build.
+Repository CI cannot prove provider-specific quotas or real credentials. Before creator outreach:
 
-## Remaining external verification
+1. deploy the exact green main commit as one replica behind HTTPS;
+2. persist `/app/data`;
+3. run `npm run doctor`;
+4. verify `/ready` returns 200;
+5. test every configured provider with owned inboxes;
+6. search all mailboxes and verify account identity on each result;
+7. verify ambiguous sends fail with `ACCOUNT_REQUIRED`;
+8. verify intentional cross-account replies fail with `ACCOUNT_MISMATCH`;
+9. verify Microsoft 365 accounts with STARTTLS when used;
+10. run controlled provider pacing only against owned recipients.
 
-These items require credentials/infrastructure and cannot be completed safely in repository-only CI:
+## Next architectural milestone
 
-- Run `npm run doctor` against the intended Alibaba Mail account using deployment secrets.
-- Run opt-in IMAP integration against an owned non-production mailbox.
-- Run opt-in SMTP integration to an owned test recipient.
-- Deploy the MCP service behind HTTPS as one replica.
-- Register the deployed `/mcp` endpoint in an eligible ChatGPT workspace and scan the seven tools.
-- Perform one owned-inbox end-to-end thread test before contacting real creators.
-- Run controlled provider pacing against owned addresses only (1, 5, 10, then at most 25 messages) and stop on the first provider deferral/rate-limit/timeout anomaly.
-- Treat repository mock-limit results as connector correctness evidence, not as an Alibaba Mail quota or throughput SLA.
-
-## Scope intentionally not included in v1
-
-- CRM/dashboard UI.
-- Contact database.
-- Autonomous negotiation.
-- Background campaign scheduler.
-- Newsletter-scale bulk sending.
-- Automatic unattended follow-ups.
-- Shared/distributed idempotency storage.
-- Production credentials in GitHub Actions.
-
-Follow-up scheduling and a shared idempotency backend can be layered on later without changing the core mail connector surface.
+The highest-value next infrastructure improvement after v0.3 is a shared durable state layer (Redis or database) for idempotency and OAuth refresh-token rotation. That is the prerequisite for safe multi-replica deployment; it is more important than adding more outreach features.
