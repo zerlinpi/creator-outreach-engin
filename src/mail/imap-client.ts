@@ -1,5 +1,5 @@
 import { ImapFlow } from 'imapflow';
-import type { AppConfig } from '../config.js';
+import type { MailRuntimeConfig } from '../config.js';
 import { ConnectorError } from '../errors.js';
 import { parseMessage } from './parser.js';
 import { normalizeSubject, resolveThread } from './threading.js';
@@ -18,11 +18,18 @@ export interface SearchCriteria {
   limit?: number;
 }
 
+export interface DecodedMessageRef {
+  account?: string;
+  mailbox: string;
+  uid: number;
+  uidValidity: string;
+}
+
 export function attachImapErrorListener(client: { on(event: 'error', listener: (error: unknown) => void): unknown }): void {
   client.on('error', () => undefined);
 }
 
-export function buildImapClientOptions(config: AppConfig) {
+export function buildImapClientOptions(config: MailRuntimeConfig) {
   return {
     host: config.imap.host,
     port: config.imap.port,
@@ -35,7 +42,7 @@ export function buildImapClientOptions(config: AppConfig) {
   };
 }
 
-export function buildSearchFetchQuery(config: AppConfig) {
+export function buildSearchFetchQuery(config: MailRuntimeConfig) {
   return {
     uid: true,
     source: { start: 0, maxLength: config.searchSourceBytes },
@@ -44,7 +51,7 @@ export function buildSearchFetchQuery(config: AppConfig) {
   };
 }
 
-export function buildFullMessageFetchQuery(config: AppConfig) {
+export function buildFullMessageFetchQuery(config: MailRuntimeConfig) {
   return {
     uid: true,
     source: { start: 0, maxLength: config.maxMessageBytes + 1 },
@@ -55,18 +62,30 @@ export function buildFullMessageFetchQuery(config: AppConfig) {
 
 export function enforceMessageSize(size: number, maxBytes: number): void {
   if (size > maxBytes) {
-    throw new ConnectorError('MESSAGE_TOO_LARGE', `Message exceeds the configured ${maxBytes}-byte limit.`);
+    throw new ConnectorError('MESSAGE_TOO_LARGE', 'Message exceeds the configured ' + maxBytes + '-byte limit.');
   }
 }
 
-export function encodeMessageRef(mailbox: string, uid: number, uidValidity: bigint | string | number): string {
-  return Buffer.from(JSON.stringify({ mailbox, uid, uidValidity: String(uidValidity) }), 'utf8').toString('base64url');
+export function encodeMessageRef(
+  mailbox: string,
+  uid: number,
+  uidValidity: bigint | string | number,
+  account?: string
+): string {
+  const value = {
+    ...(account ? { account } : {}),
+    mailbox,
+    uid,
+    uidValidity: String(uidValidity)
+  };
+  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
 }
 
-export function decodeMessageRef(ref: string): { mailbox: string; uid: number; uidValidity: string } {
+export function decodeMessageRef(ref: string): DecodedMessageRef {
   try {
     const value = JSON.parse(Buffer.from(ref, 'base64url').toString('utf8'));
     if (
+      (value.account !== undefined && (typeof value.account !== 'string' || !/^[a-z][a-z0-9_]{0,31}$/.test(value.account))) ||
       typeof value.mailbox !== 'string' ||
       !Number.isInteger(value.uid) ||
       value.uid < 1 ||
@@ -75,7 +94,12 @@ export function decodeMessageRef(ref: string): { mailbox: string; uid: number; u
     ) {
       throw new Error('bad ref');
     }
-    return { mailbox: value.mailbox, uid: value.uid, uidValidity: value.uidValidity };
+    return {
+      ...(value.account ? { account: value.account } : {}),
+      mailbox: value.mailbox,
+      uid: value.uid,
+      uidValidity: value.uidValidity
+    };
   } catch {
     throw new ConnectorError('MESSAGE_NOT_FOUND', 'Invalid message reference.');
   }
@@ -83,8 +107,9 @@ export function decodeMessageRef(ref: string): { mailbox: string; uid: number; u
 
 function classifyImapError(error: unknown): ConnectorError {
   const value = error as { code?: string; authenticationFailed?: boolean; responseText?: string; message?: string } | undefined;
-  const text = `${value?.code ?? ''} ${value?.responseText ?? ''} ${value?.message ?? ''}`.toLowerCase();
-  if (value?.authenticationFailed || text.includes('authentication') || text.includes('auth failed')) {
+  const text = (value?.code ?? '') + ' ' + (value?.responseText ?? '') + ' ' + (value?.message ?? '');
+  const normalized = text.toLowerCase();
+  if (value?.authenticationFailed || normalized.includes('authentication') || normalized.includes('auth failed')) {
     return new ConnectorError('AUTH_FAILED', 'Mailbox authentication failed.', { cause: error });
   }
   return new ConnectorError('IMAP_UNAVAILABLE', 'Mailbox access failed.', { cause: error });
@@ -94,7 +119,7 @@ function dedupeMessages(messages: NormalizedMessage[]): NormalizedMessage[] {
   const seen = new Set<string>();
   const out: NormalizedMessage[] = [];
   for (const message of messages) {
-    const key = message.messageId ?? `${message.mailbox}:${message.uid}`;
+    const key = message.messageId ?? (message.account ?? '') + ':' + message.mailbox + ':' + message.uid;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(message);
@@ -103,7 +128,10 @@ function dedupeMessages(messages: NormalizedMessage[]): NormalizedMessage[] {
 }
 
 export class ImapMailClient {
-  constructor(private readonly config: AppConfig) {}
+  constructor(
+    private readonly config: MailRuntimeConfig,
+    readonly accountId: string = 'default'
+  ) {}
 
   private createClient() {
     const client = new ImapFlow(buildImapClientOptions(this.config));
@@ -175,7 +203,8 @@ export class ImapMailClient {
         const truncated = fullSize > item.source.length;
         out.push({
           ...(await parseMessage(item.source, {
-            id: encodeMessageRef(mailbox, uid, uidValidity),
+            id: encodeMessageRef(mailbox, uid, uidValidity, this.accountId),
+            account: this.accountId,
             mailbox,
             uid,
             unread: !item.flags?.has('\\Seen')
@@ -189,7 +218,11 @@ export class ImapMailClient {
   }
 
   async getEmail(ref: string): Promise<NormalizedMessage> {
-    const { mailbox, uid, uidValidity } = decodeMessageRef(ref);
+    const { account, mailbox, uid, uidValidity } = decodeMessageRef(ref);
+    if (account && account !== this.accountId) {
+      throw new ConnectorError('ACCOUNT_MISMATCH', 'The message reference belongs to a different mail account.');
+    }
+
     return this.withClient(async (client) => {
       const opened = await client.mailboxOpen(mailbox);
       if (String(opened.uidValidity) !== uidValidity) {
@@ -201,6 +234,7 @@ export class ImapMailClient {
           enforceMessageSize(Math.max(fullSize, item.source.length), this.config.maxMessageBytes);
           return parseMessage(item.source, {
             id: ref,
+            account: this.accountId,
             mailbox,
             uid,
             unread: !item.flags?.has('\\Seen')
