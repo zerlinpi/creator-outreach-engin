@@ -20,7 +20,8 @@ export function buildSmtpTransportOptions(config: MailRuntimeConfig) {
   return {
     host: config.smtp.host,
     port: config.smtp.port,
-    secure: true,
+    secure: config.smtp.secure,
+    ...(config.smtp.requireTLS ? { requireTLS: true } : {}),
     auth: { user: config.username, pass: config.appPassword },
     connectionTimeout: config.smtp.connectionTimeout,
     greetingTimeout: config.smtp.greetingTimeout,
@@ -64,15 +65,28 @@ function classifySmtpError(error: unknown): ConnectorError {
 
 export class SmtpMailClient {
   private readonly transport: MailTransport;
+  private sendTail: Promise<void> = Promise.resolve();
+  private enabled = true;
 
   constructor(private readonly config: MailRuntimeConfig, transport?: MailTransport) {
     this.transport = transport ?? (nodemailer.createTransport(buildSmtpTransportOptions(config)) as MailTransport);
+  }
+
+  disable(): void {
+    this.enabled = false;
+  }
+
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const run = this.sendTail.then(operation, operation);
+    this.sendTail = run.then(() => undefined, () => undefined);
+    return run;
   }
 
   async verifyConnection(): Promise<boolean> {
     if (!this.transport.verify) {
       throw new ConnectorError('SMTP_UNAVAILABLE', 'SMTP connection verification is unavailable.');
     }
+    if (!this.enabled) throw new ConnectorError('ACCOUNT_NOT_FOUND', 'Mail account configuration changed or was removed.');
     try {
       return await this.transport.verify();
     } catch (error) {
@@ -80,40 +94,43 @@ export class SmtpMailClient {
     }
   }
 
-  async send(message: OutgoingMessage): Promise<SendResult> {
-    const to = validateAddressList(message.to);
-    const cc = optionalAddresses(message.cc);
-    const bcc = optionalAddresses(message.bcc);
-    const replyTo = message.replyTo ? validateAddressList([message.replyTo])[0] : undefined;
-    enforceEnvelopeRecipientLimit(to, cc, bcc);
+  send(message: OutgoingMessage): Promise<SendResult> {
+    return this.enqueue(async () => {
+      if (!this.enabled) throw new ConnectorError('ACCOUNT_NOT_FOUND', 'Mail account configuration changed or was removed.');
+      const to = validateAddressList(message.to);
+      const cc = optionalAddresses(message.cc);
+      const bcc = optionalAddresses(message.bcc);
+      const replyTo = message.replyTo ? validateAddressList([message.replyTo])[0] : undefined;
+      enforceEnvelopeRecipientLimit(to, cc, bcc);
 
-    try {
-      const info = await this.transport.sendMail({
-        from: { name: this.config.fromName, address: this.config.username },
-        to,
-        cc,
-        bcc,
-        subject: message.subject,
-        text: message.text,
-        html: message.html,
-        replyTo,
-        inReplyTo: message.inReplyTo,
-        references: message.references
-      });
+      try {
+        const info = await this.transport.sendMail({
+          from: { name: this.config.fromName, address: this.config.username },
+          to,
+          cc,
+          bcc,
+          subject: message.subject,
+          text: message.text,
+          html: message.html,
+          replyTo,
+          inReplyTo: message.inReplyTo,
+          references: message.references
+        });
 
-      const accepted = info.accepted.map(String);
-      const rejected = info.rejected.map(String);
-      const acceptedAddresses = new Set(accepted.map(normalizeAddress));
-      const missingPrimary = to.filter((address) => !acceptedAddresses.has(address));
+        const accepted = info.accepted.map(String);
+        const rejected = info.rejected.map(String);
+        const acceptedAddresses = new Set(accepted.map(normalizeAddress));
+        const missingPrimary = to.filter((address) => !acceptedAddresses.has(address));
 
-      if (missingPrimary.length > 0) {
-        throw new ConnectorError('RECIPIENT_REJECTED', 'Mail provider did not accept the primary recipient.');
+        if (missingPrimary.length > 0) {
+          throw new ConnectorError('RECIPIENT_REJECTED', 'Mail provider did not accept the primary recipient.');
+        }
+
+        return { accepted, rejected, messageId: info.messageId };
+      } catch (error) {
+        if (error instanceof ConnectorError) throw error;
+        throw classifySmtpError(error);
       }
-
-      return { accepted, rejected, messageId: info.messageId };
-    } catch (error) {
-      if (error instanceof ConnectorError) throw error;
-      throw classifySmtpError(error);
-    }
+    });
   }
 }

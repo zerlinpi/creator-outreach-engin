@@ -22,7 +22,7 @@ export function createMailAccountRuntime(account: MailAccountConfig, source: Mai
     address: account.username,
     fromName: account.fromName,
     source,
-    imap: new ImapMailClient(account, account.id),
+    imap: new ImapMailClient(account, account.id, account.messageRefSecret),
     smtp: new SmtpMailClient(account)
   };
 }
@@ -31,7 +31,11 @@ export class MailAccountRegistry {
   private readonly accounts = new Map<string, MailAccountRuntime>();
   private defaultId?: string;
 
-  constructor(accounts: MailAccountRuntime[] = [], defaultAccount?: string) {
+  constructor(
+    accounts: MailAccountRuntime[] = [],
+    defaultAccount?: string,
+    private readonly messageRefSecret?: string
+  ) {
     for (const account of accounts) this.upsert(account);
     if (defaultAccount) this.setDefault(defaultAccount);
     else this.defaultId = accounts[0]?.id;
@@ -55,12 +59,20 @@ export class MailAccountRegistry {
 
   upsert(account: MailAccountRuntime): void {
     if (!ACCOUNT_ID.test(account.id)) throw new Error('Invalid mail account id.');
+    const previous = this.accounts.get(account.id);
+    if (previous && previous !== account) {
+      previous.imap.disable?.();
+      previous.smtp.disable?.();
+    }
     this.accounts.set(account.id, account);
     this.defaultId ??= account.id;
   }
 
   remove(id: string): void {
     const normalized = id.trim().toLowerCase();
+    const previous = this.accounts.get(normalized);
+    previous?.imap.disable?.();
+    previous?.smtp.disable?.();
     this.accounts.delete(normalized);
     if (this.defaultId === normalized) this.defaultId = this.accounts.keys().next().value;
   }
@@ -72,14 +84,51 @@ export class MailAccountRegistry {
   }
 
   resolve(account?: string): MailAccountRuntime {
-    const id = account?.trim().toLowerCase() || this.defaultId;
-    if (!id) throw new ConnectorError('ACCOUNT_NOT_FOUND', 'No mail account is configured.');
-    const runtime = this.accounts.get(id);
+    const requested = account?.trim().toLowerCase();
+    if (!requested) {
+      if (this.accounts.size === 0) throw new ConnectorError('ACCOUNT_NOT_FOUND', 'No mail account is configured.');
+      if (this.accounts.size > 1) {
+        throw new ConnectorError(
+          'ACCOUNT_REQUIRED',
+          'Multiple mail accounts are configured. Specify account explicitly, or use all_accounts for a cross-account search.'
+        );
+      }
+      return this.accounts.values().next().value as MailAccountRuntime;
+    }
+
+    const runtime = this.accounts.get(requested);
     if (!runtime) throw new ConnectorError('ACCOUNT_NOT_FOUND', 'The requested mail account is not configured.');
     return runtime;
   }
 
   resolveForMessage(messageRef: string, requestedAccount?: string): MailAccountRuntime {
+    if (this.messageRefSecret) {
+      try {
+        const encodedAccount = decodeMessageRef(messageRef, this.messageRefSecret).account;
+        if (encodedAccount && requestedAccount && encodedAccount !== requestedAccount.trim().toLowerCase()) {
+          throw new ConnectorError('ACCOUNT_MISMATCH', 'The message reference belongs to a different mail account.');
+        }
+        return this.resolve(encodedAccount ?? requestedAccount);
+      } catch (error) {
+        if (error instanceof ConnectorError && error.code === 'ACCOUNT_MISMATCH') throw error;
+        if (!messageRef.startsWith('mr1.')) {
+          if (!requestedAccount && this.accounts.size > 1) {
+            throw new ConnectorError(
+              'ACCOUNT_REQUIRED',
+              'This legacy message reference is unsigned. Specify its account explicitly before reading or replying.'
+            );
+          }
+          const legacy = decodeMessageRef(messageRef, undefined);
+          const runtime = this.resolve(requestedAccount);
+          if (legacy.account && legacy.account !== runtime.id) {
+            throw new ConnectorError('ACCOUNT_MISMATCH', 'The legacy message reference belongs to a different mail account.');
+          }
+          return runtime;
+        }
+        throw error;
+      }
+    }
+
     let encodedAccount: string | undefined;
     try {
       encodedAccount = decodeMessageRef(messageRef).account;
@@ -96,5 +145,5 @@ export class MailAccountRegistry {
 export function createMailAccountRegistry(config: AppConfig): MailAccountRegistry {
   const definitions = Object.values(config.accounts ?? {});
   const runtimes = definitions.map((account) => createMailAccountRuntime(account, 'environment'));
-  return new MailAccountRegistry(runtimes, config.defaultAccount);
+  return new MailAccountRegistry(runtimes, config.defaultAccount, config.messageRefSecret);
 }

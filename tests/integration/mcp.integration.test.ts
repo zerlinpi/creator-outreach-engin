@@ -260,7 +260,9 @@ describe('remote MCP HTTP surface', () => {
     const { client, transport, campx, hassky } = await openMultiClient();
     try {
       const mailboxes = jsonText(await client.callTool({ name: 'list_mailboxes', arguments: {} }));
-      expect(mailboxes.defaultAccount).toBe('campx');
+      expect(mailboxes.accountSelectionRequired).toBe(true);
+      expect(mailboxes.accountCount).toBe(2);
+      expect(mailboxes).not.toHaveProperty('defaultAccount');
       expect(mailboxes.accounts.map((entry: { account: string }) => entry.account)).toEqual(['campx', 'hassky']);
 
       const sharedKey = 'same-business-key-001';
@@ -290,16 +292,18 @@ describe('remote MCP HTTP surface', () => {
       expect(campx.sent).toHaveLength(1);
       expect(hassky.sent).toHaveLength(1);
 
-      await client.callTool({
+      const ambiguous = await client.callTool({
         name: 'send_email',
         arguments: {
           to: ['default@example.com'],
-          subject: 'Default sender',
-          text: 'Uses campx',
+          subject: 'Ambiguous sender',
+          text: 'Must not guess a sender',
           idempotency_key: 'default-account-001'
         }
       });
-      expect(campx.sent).toHaveLength(2);
+      expect(ambiguous.isError).toBe(true);
+      expect(jsonText(ambiguous)).toMatchObject({ error: { code: 'ACCOUNT_REQUIRED' } });
+      expect(campx.sent).toHaveLength(1);
 
       const mismatch = await client.callTool({
         name: 'reply_email',
@@ -312,7 +316,7 @@ describe('remote MCP HTTP surface', () => {
       });
       expect(mismatch.isError).toBe(true);
       expect(jsonText(mismatch)).toMatchObject({ error: { code: 'ACCOUNT_MISMATCH' } });
-      expect(campx.sent).toHaveLength(2);
+      expect(campx.sent).toHaveLength(1);
       expect(hassky.sent).toHaveLength(1);
     } finally {
       await transport.terminateSession().catch(() => undefined);

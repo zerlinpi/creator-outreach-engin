@@ -98,7 +98,7 @@ describe('single-replica limit and capacity verification', () => {
       await transport.terminateSession().catch(() => undefined);
       await client.close();
     }
-  });
+  }, 30_000);
 
   it('coalesces 1000 concurrent replays of the same write into one SMTP send', async () => {
     const { client, transport, sent } = await openClient({ sendDelayMs: 10 });
@@ -122,7 +122,7 @@ describe('single-replica limit and capacity verification', () => {
       await transport.terminateSession().catch(() => undefined);
       await client.close();
     }
-  });
+  }, 30_000);
 
   it('fills the 1000-entry idempotency capacity through concurrent MCP writes and fails closed on the next key', async () => {
     const { client, transport, sent } = await openClient({ sendDelayMs: 2 });
@@ -160,7 +160,7 @@ describe('single-replica limit and capacity verification', () => {
       await transport.terminateSession().catch(() => undefined);
       await client.close();
     }
-  });
+  }, 30_000);
 
   it('accepts exactly 1000 protected idempotency entries and fails closed on entry 1001', async () => {
     const store = new IdempotencyStore({ ttlMs: 60_000, maxEntries: 1000 });

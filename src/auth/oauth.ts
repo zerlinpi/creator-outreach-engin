@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import express, { type Express, type Request, type Response } from 'express';
+import { FailureRateLimiter, applySensitiveHeaders, requestClientKey } from '../http-security.js';
 
 export interface OAuthConfig {
   issuer: string;
@@ -36,12 +37,16 @@ interface SignedTokenPayload {
   scope: string;
   iat: number;
   exp: number;
+  jti?: string;
 }
 
 const SUPPORTED_SCOPES = ['mcp:mail', 'offline_access'] as const;
 const ACCESS_TOKEN_TTL_SECONDS = 60 * 60;
 const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 const AUTHORIZATION_TTL_MS = 10 * 60 * 1000;
+const MAX_PENDING_AUTHORIZATIONS = 500;
+const MAX_AUTHORIZATION_CODES = 500;
+const MAX_USED_REFRESH_TOKENS = 5000;
 
 function safeEqual(a: string, b: string): boolean {
   const left = Buffer.from(a);
@@ -128,7 +133,8 @@ function tokenResponse(config: OAuthConfig, clientId: string, scope: string) {
     aud: audience,
     scope,
     iat: now,
-    exp: now + REFRESH_TOKEN_TTL_SECONDS
+    exp: now + REFRESH_TOKEN_TTL_SECONDS,
+    jti: randomBytes(18).toString('base64url')
   };
   return {
     access_token: `oa.${signPayload(accessPayload, config.signingSecret)}`,
@@ -151,7 +157,9 @@ function verifySignedToken(token: string, prefix: 'oa.' | 'or.', expectedType: '
 
 export function isOAuthAuthorized(header: string | undefined, config?: OAuthConfig): boolean {
   if (!config || !header?.startsWith('Bearer ')) return false;
-  return verifySignedToken(header.slice(7), 'oa.', 'access', config) !== null;
+  const payload = verifySignedToken(header.slice(7), 'oa.', 'access', config);
+  if (!payload) return false;
+  return payload.scope.split(/\s+/).includes('mcp:mail');
 }
 
 export function oauthChallenge(config: OAuthConfig): string {
@@ -161,6 +169,9 @@ export function oauthChallenge(config: OAuthConfig): string {
 export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
   const pending = new Map<string, PendingAuthorization>();
   const codes = new Map<string, AuthorizationCode>();
+  const usedRefreshTokens = new Map<string, number>();
+  const loginLimiter = new FailureRateLimiter(10, 5 * 60 * 1000, 15 * 60 * 1000);
+  const tokenLimiter = new FailureRateLimiter(30, 5 * 60 * 1000, 10 * 60 * 1000);
   const urlencoded = express.urlencoded({ extended: false, limit: '32kb' });
   const json = express.json({ limit: '32kb' });
 
@@ -168,6 +179,8 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
     const now = Date.now();
     for (const [key, value] of pending) if (value.expiresAt <= now) pending.delete(key);
     for (const [key, value] of codes) if (value.expiresAt <= now) codes.delete(key);
+    const nowSeconds = Math.floor(now / 1000);
+    for (const [key, expiresAt] of usedRefreshTokens) if (expiresAt <= nowSeconds) usedRefreshTokens.delete(key);
   }
 
   const protectedResource = {
@@ -176,6 +189,8 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
     scopes_supported: [...SUPPORTED_SCOPES],
     bearer_methods_supported: ['header']
   };
+
+  app.use(['/oauth/authorize', '/oauth/token', '/oauth/register'], (_req, res, next) => { applySensitiveHeaders(res); next(); });
 
   app.get('/.well-known/oauth-protected-resource', (_req, res) => res.json(protectedResource));
   app.get('/.well-known/oauth-protected-resource/mcp', (_req, res) => res.json(protectedResource));
@@ -237,6 +252,7 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
       return res.status(400).send('PKCE S256 is required.');
     }
 
+    if (pending.size >= MAX_PENDING_AUTHORIZATIONS) return res.status(503).send('Authorization service is temporarily busy.');
     const requestId = randomBytes(24).toString('base64url');
     pending.set(requestId, {
       clientId,
@@ -249,10 +265,10 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
 
     return res.status(200).type('html').send(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Authorize CAMPX Mail</title></head>
+<title>Authorize Creator Outreach Mail</title></head>
 <body style="font-family:system-ui,sans-serif;max-width:560px;margin:48px auto;padding:0 20px">
-<h1>Authorize CAMPX Creator Mail</h1>
-<p><strong>${escapeHtml(client.name)}</strong> is requesting access to the CAMPX creator-outreach mailbox.</p>
+<h1>Authorize Creator Outreach Mail</h1>
+<p><strong>${escapeHtml(client.name)}</strong> is requesting access to the configured creator-outreach mailboxes.</p>
 <p>Requested scope: <code>${escapeHtml(scope)}</code></p>
 <form method="post" action="/oauth/authorize">
 <input type="hidden" name="request_id" value="${escapeHtml(requestId)}">
@@ -264,6 +280,12 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
 
   app.post('/oauth/authorize', urlencoded, (req, res) => {
     prune();
+    const clientKey = requestClientKey(req);
+    const loginState = loginLimiter.check(clientKey);
+    if (!loginState.allowed) {
+      res.setHeader('Retry-After', String(loginState.retryAfterSeconds ?? 900));
+      return res.status(429).send('Too many failed authorization attempts.');
+    }
     const requestId = typeof req.body?.request_id === 'string' ? req.body.request_id : '';
     const authorization = pending.get(requestId);
     if (!authorization) return res.status(400).send('Authorization request expired or invalid.');
@@ -279,10 +301,13 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
 
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
     if (!safeEqual(password, config.loginPassword)) {
+      loginLimiter.failure(clientKey);
       return res.status(401).send('Invalid authorization password.');
     }
 
+    loginLimiter.success(clientKey);
     pending.delete(requestId);
+    if (codes.size >= MAX_AUTHORIZATION_CODES) return res.status(503).send('Authorization service is temporarily busy.');
     const code = randomBytes(32).toString('base64url');
     codes.set(code, {
       clientId: authorization.clientId,
@@ -301,18 +326,30 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
 
   app.post('/oauth/token', urlencoded, (req, res) => {
     prune();
+    const clientKey = requestClientKey(req);
+    const tokenState = tokenLimiter.check(clientKey);
+    if (!tokenState.allowed) {
+      res.setHeader('Retry-After', String(tokenState.retryAfterSeconds ?? 600));
+      return res.status(429).json({ error: 'temporarily_unavailable' });
+    }
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Pragma', 'no-cache');
 
     const grantType = req.body?.grant_type;
     const clientId = typeof req.body?.client_id === 'string' ? req.body.client_id : '';
     const client = decodeClient(clientId, config.signingSecret);
-    if (!client) return res.status(401).json({ error: 'invalid_client' });
+    if (!client) {
+      tokenLimiter.failure(clientKey);
+      return res.status(401).json({ error: 'invalid_client' });
+    }
 
     if (grantType === 'authorization_code') {
       const code = typeof req.body?.code === 'string' ? req.body.code : '';
       const entry = codes.get(code);
-      if (!entry) return res.status(400).json({ error: 'invalid_grant' });
+      if (!entry) {
+        tokenLimiter.failure(clientKey);
+        return res.status(400).json({ error: 'invalid_grant' });
+      }
       const redirectUri = parseRedirectUri(req.body?.redirect_uri);
       const verifier = typeof req.body?.code_verifier === 'string' ? req.body.code_verifier : '';
       const challenge = createHash('sha256').update(verifier).digest('base64url');
@@ -323,21 +360,30 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
         entry.redirectUri !== redirectUri ||
         !safeEqual(challenge, entry.codeChallenge)
       ) {
+        tokenLimiter.failure(clientKey);
         return res.status(400).json({ error: 'invalid_grant' });
       }
       codes.delete(code);
+      tokenLimiter.success(clientKey);
       return res.json(tokenResponse(config, clientId, entry.scope));
     }
 
     if (grantType === 'refresh_token') {
       const refreshToken = typeof req.body?.refresh_token === 'string' ? req.body.refresh_token : '';
       const payload = verifySignedToken(refreshToken, 'or.', 'refresh', config);
-      if (!payload || payload.cid !== clientId) {
+      if (!payload || payload.cid !== clientId || !payload.jti || usedRefreshTokens.has(payload.jti)) {
+        tokenLimiter.failure(clientKey);
         return res.status(400).json({ error: 'invalid_grant' });
       }
+      if (usedRefreshTokens.size >= MAX_USED_REFRESH_TOKENS) {
+        return res.status(503).json({ error: 'temporarily_unavailable' });
+      }
+      usedRefreshTokens.set(payload.jti, payload.exp);
+      tokenLimiter.success(clientKey);
       return res.json(tokenResponse(config, clientId, payload.scope));
     }
 
+    tokenLimiter.failure(clientKey);
     return res.status(400).json({ error: 'unsupported_grant_type' });
   });
 }

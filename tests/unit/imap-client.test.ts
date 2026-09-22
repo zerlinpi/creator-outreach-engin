@@ -57,6 +57,40 @@ describe('stable IMAP message references', () => {
     });
   });
 
+  it('signs production message references and rejects tampering', () => {
+    const secret = 'signed-message-ref-secret-1234567890';
+    const ref = encodeMessageRef('INBOX', 7, 11, 'hassky', secret);
+    expect(ref).toMatch(/^mr1\./);
+    expect(decodeMessageRef(ref, secret)).toEqual({
+      account: 'hassky',
+      mailbox: 'INBOX',
+      uid: 7,
+      uidValidity: '11'
+    });
+
+    const parts = ref.split('.');
+    const tamperedBody = Buffer.from(JSON.stringify({
+      account: 'campx',
+      mailbox: 'INBOX',
+      uid: 7,
+      uidValidity: '11'
+    }), 'utf8').toString('base64url');
+    expect(() => decodeMessageRef([parts[0], tamperedBody, parts[2]].join('.'), secret))
+      .toThrowError(expect.objectContaining({ code: 'MESSAGE_NOT_FOUND' }));
+  });
+
+  it('allows unsigned legacy refs only when explicitly opted into migration mode', () => {
+    const ref = encodeMessageRef('INBOX', 7, 11, 'hassky');
+    const secret = 'signed-message-ref-secret-1234567890';
+    expect(() => decodeMessageRef(ref, secret)).toThrowError(expect.objectContaining({ code: 'MESSAGE_NOT_FOUND' }));
+    expect(decodeMessageRef(ref, secret, true)).toEqual({
+      account: 'hassky',
+      mailbox: 'INBOX',
+      uid: 7,
+      uidValidity: '11'
+    });
+  });
+
   it('rejects legacy or malformed references that are not bound to UIDVALIDITY', () => {
     const legacy = Buffer.from(JSON.stringify({ mailbox: 'INBOX', uid: 1 }), 'utf8').toString('base64url');
     expect(() => decodeMessageRef(legacy)).toThrowError(ConnectorError);

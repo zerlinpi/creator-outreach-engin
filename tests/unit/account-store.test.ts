@@ -43,6 +43,26 @@ describe('EncryptedAccountStore', () => {
     expect((await store.list())[0]).not.toHaveProperty('appPassword');
   });
 
+  it('serializes concurrent mailbox writes without losing accounts', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'mail-store-')); dirs.push(dir);
+    const store = new EncryptedAccountStore(join(dir, 'accounts.json'), '0123456789abcdef0123456789abcdef', 30);
+
+    await Promise.all(Array.from({ length: 20 }, (_, index) => store.upsert({
+      id: 'parallel' + index,
+      username: 'parallel' + index + '@example.com',
+      appPassword: 'parallel-secret-' + index,
+      fromName: 'Parallel ' + index,
+      imapHost: 'imap.example.com',
+      imapPort: 993,
+      smtpHost: 'smtp.example.com',
+      smtpPort: 465
+    })));
+
+    const loaded = await store.loadAll(base());
+    expect(loaded.accounts).toHaveLength(20);
+    expect(new Set(loaded.accounts.map((account) => account.id)).size).toBe(20);
+  });
+
   it('supports password-preserving edits and an external default account id', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'mail-store-')); dirs.push(dir);
     const store = new EncryptedAccountStore(join(dir, 'accounts.json'), '0123456789abcdef0123456789abcdef');

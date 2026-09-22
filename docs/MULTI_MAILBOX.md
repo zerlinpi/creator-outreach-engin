@@ -1,46 +1,52 @@
 # Multi-Mailbox Migration
 
-This release adds multiple isolated sender mailboxes behind one MCP endpoint while preserving legacy single-mailbox environment variables.
+This document covers migration from v0.2 multi-mailbox routing to the v0.3 fail-closed model.
 
-## Recommended configuration
+## Behavior change
+
+When more than one mailbox exists, the connector no longer uses `MAIL_DEFAULT_ACCOUNT` as an implicit AI sender or read target. Ambiguous operations return `ACCOUNT_REQUIRED`.
+
+Use an explicit `account`, or `all_accounts=true` when the intent is to search every mailbox.
+
+`MAIL_DEFAULT_ACCOUNT` remains accepted for legacy configuration/metadata compatibility but is not an authorization to guess a sender.
+
+## Message references
+
+v0.3 generates HMAC-signed `message_ref` values. Set a stable `MAIL_MESSAGE_REF_SIGNING_KEY` if you plan to rotate `CONNECTOR_AUTH_TOKEN`.
+
+Old unsigned refs remain migration-compatible only when there is one configured mailbox or when the caller explicitly supplies their account. New refs should be obtained by searching the mailbox again.
+
+## Provider transport
+
+Implicit TLS remains the default for Alibaba Mail/Gmail style SMTP 465. Providers using SMTP 587 can use:
 
 ```env
-MAIL_ACCOUNTS=campx,hassky
-MAIL_DEFAULT_ACCOUNT=campx
-
-MAIL_CAMPX_USERNAME=marketing@campxusainc.com
-MAIL_CAMPX_APP_PASSWORD=<secret>
-MAIL_CAMPX_FROM_NAME=CAMPX
-
-MAIL_HASSKY_USERNAME=marketing@hasskyproducts.com
-MAIL_HASSKY_APP_PASSWORD=<secret>
-MAIL_HASSKY_FROM_NAME=HASSKY Mobility
+MAIL_SMTP_PORT=587
+MAIL_SMTP_SECURITY=starttls
 ```
 
-Each account can override `IMAP_HOST`, `IMAP_PORT`, `SMTP_HOST`, and `SMTP_PORT` using the same prefix.
+Per-account environment configuration may use `MAIL_<ACCOUNT>_SMTP_SECURITY`.
 
-## Compatibility
+## Scale safeguards
 
-If `MAIL_ACCOUNTS` is absent, `MAIL_USERNAME`, `MAIL_APP_PASSWORD`, and `MAIL_FROM_NAME` continue to work.
+Recommended defaults:
 
-Old message references without an embedded account remain usable through the requested/default account. Newly generated message references are account-scoped and should be preferred.
+```env
+MAIL_IMAP_ACCOUNT_CONCURRENCY=2
+MAIL_ALL_ACCOUNT_READ_CONCURRENCY=4
+MAIL_MULTI_ACCOUNT_SEND_CONCURRENCY=3
+```
 
-## Safety behavior
-
-- Message refs bind account + mailbox + UIDVALIDITY + UID.
-- Explicit account/ref mismatches fail with `ACCOUNT_MISMATCH`.
-- Unknown accounts fail with `ACCOUNT_NOT_FOUND`.
-- Reply sender identity is derived from the owning account.
-- Idempotency keys are scoped per account.
-- One batch cannot mix sender accounts.
-- No automatic brand failover or sender rotation occurs.
+These bound connection fan-out when 10–50 mailboxes are configured. SMTP sends for one account are serialized.
 
 ## Rollout
 
-1. Deploy with the existing single mailbox and confirm compatibility.
-2. Add `MAIL_ACCOUNTS` plus the current mailbox as the first named account.
+1. Deploy v0.3 as a single replica.
+2. Persist `/app/data` if using the UI store.
 3. Run `npm run doctor`.
-4. Add the second mailbox and rerun doctor.
-5. Use owned addresses to test search/read/send/reply for both accounts.
-6. Verify cross-account reply mismatch protection.
-7. Only then enable creator outreach from the second mailbox.
+4. Check `/ready`.
+5. Call `list_mailboxes` and confirm `accountSelectionRequired=true` when multiple accounts exist.
+6. Search all accounts with `all_accounts=true` and verify every result has account identity.
+7. Verify an ambiguous send without `account` fails with `ACCOUNT_REQUIRED`.
+8. Verify an intentional cross-account reply fails with `ACCOUNT_MISMATCH`.
+9. Test each provider using owned recipients before creator outreach.

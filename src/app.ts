@@ -1,6 +1,7 @@
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import { createMcpExpressApp } from '@modelcontextprotocol/express';
 import { toNodeHandler } from '@modelcontextprotocol/node';
+import { AsyncSemaphore } from './concurrency.js';
 import { isAuthorized } from './auth/bearer.js';
 import { isOAuthAuthorized, oauthChallenge, registerOAuthRoutes, type OAuthConfig } from './auth/oauth.js';
 import type { AppConfig, MailAdminConfig } from './config.js';
@@ -27,6 +28,8 @@ export interface HttpAppDependencies {
   admin?: MailAdminConfig;
   accountStore?: EncryptedAccountStore;
   baseConfig?: AppConfig;
+  allAccountReadConcurrency?: number;
+  multiAccountSendConcurrency?: number;
 }
 
 function buildRegistry(deps: HttpAppDependencies): MailAccountRegistry {
@@ -46,12 +49,21 @@ function buildRegistry(deps: HttpAppDependencies): MailAccountRegistry {
 export function createHttpApp(deps: HttpAppDependencies) {
   const idempotency = deps.idempotencyStore ?? new IdempotencyStore();
   const registry = buildRegistry(deps);
+  const allAccountReadConcurrency = deps.allAccountReadConcurrency ?? 4;
+  const multiAccountSendConcurrency = deps.multiAccountSendConcurrency ?? 3;
+  const allAccountReadLimiter = new AsyncSemaphore(allAccountReadConcurrency);
+  const multiAccountSendLimiter = new AsyncSemaphore(multiAccountSendConcurrency);
   const handler = createMcpHandler(() => {
     const server = new McpServer(
-      { name: 'campx-creator-mail', version: '0.1.0' },
+      { name: 'campx-creator-mail', version: '0.3.0' },
       { capabilities: { tools: {} } }
     );
-    registerMailTools(server, registry, idempotency);
+    registerMailTools(server, registry, idempotency, {
+      allAccountReadConcurrency,
+      multiAccountSendConcurrency,
+      allAccountReadLimiter,
+      multiAccountSendLimiter
+    });
     return server;
   });
 
@@ -63,6 +75,11 @@ export function createHttpApp(deps: HttpAppDependencies) {
 
   app.get('/health', (_req, res) => {
     res.status(200).json({ ok: true, service: 'campx-creator-mail' });
+  });
+
+  app.get('/ready', (_req, res) => {
+    const ready = registry.size > 0;
+    res.status(ready ? 200 : 503).json({ ok: ready, service: 'campx-creator-mail' });
   });
 
   if (deps.admin && deps.accountStore && deps.baseConfig) {

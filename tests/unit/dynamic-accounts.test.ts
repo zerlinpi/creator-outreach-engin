@@ -15,10 +15,38 @@ describe('dynamic MailAccountRegistry', () => {
     for (let index = 0; index < 12; index += 1) registry.upsert(runtime('brand' + index));
     expect(registry.size).toBe(12);
     registry.setDefault('brand9');
-    expect(registry.resolve().id).toBe('brand9');
+    expect(registry.defaultAccountId).toBe('brand9');
+    expect(() => registry.resolve()).toThrowError(expect.objectContaining({ code: 'ACCOUNT_REQUIRED' }));
+    expect(registry.resolve('brand9').id).toBe('brand9');
     registry.remove('brand9');
     expect(registry.size).toBe(11);
     expect(registry.defaultAccountId).not.toBe('brand9');
+  });
+
+  it('deactivates old runtime clients when an account is replaced or removed', () => {
+    let imapDisabled = 0;
+    let smtpDisabled = 0;
+    const old = {
+      id: 'campx',
+      address: 'old@example.com',
+      fromName: 'OLD',
+      source: 'ui' as const,
+      imap: { disable() { imapDisabled += 1; } } as never,
+      smtp: { disable() { smtpDisabled += 1; } } as never
+    };
+    const replacement = runtime('campx');
+    const registry = new MailAccountRegistry([old], 'campx');
+    registry.upsert(replacement);
+    expect(imapDisabled).toBe(1);
+    expect(smtpDisabled).toBe(1);
+
+    let replacementImapDisabled = 0;
+    let replacementSmtpDisabled = 0;
+    replacement.imap = { disable() { replacementImapDisabled += 1; } } as never;
+    replacement.smtp = { disable() { replacementSmtpDisabled += 1; } } as never;
+    registry.remove('campx');
+    expect(replacementImapDisabled).toBe(1);
+    expect(replacementSmtpDisabled).toBe(1);
   });
 
   it('keeps account-scoped message refs isolated', () => {
