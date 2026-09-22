@@ -66,9 +66,14 @@ function classifySmtpError(error: unknown): ConnectorError {
 export class SmtpMailClient {
   private readonly transport: MailTransport;
   private sendTail: Promise<void> = Promise.resolve();
+  private enabled = true;
 
   constructor(private readonly config: MailRuntimeConfig, transport?: MailTransport) {
     this.transport = transport ?? (nodemailer.createTransport(buildSmtpTransportOptions(config)) as MailTransport);
+  }
+
+  disable(): void {
+    this.enabled = false;
   }
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
@@ -81,6 +86,7 @@ export class SmtpMailClient {
     if (!this.transport.verify) {
       throw new ConnectorError('SMTP_UNAVAILABLE', 'SMTP connection verification is unavailable.');
     }
+    if (!this.enabled) throw new ConnectorError('ACCOUNT_NOT_FOUND', 'Mail account configuration changed or was removed.');
     try {
       return await this.transport.verify();
     } catch (error) {
@@ -90,6 +96,7 @@ export class SmtpMailClient {
 
   send(message: OutgoingMessage): Promise<SendResult> {
     return this.enqueue(async () => {
+      if (!this.enabled) throw new ConnectorError('ACCOUNT_NOT_FOUND', 'Mail account configuration changed or was removed.');
       const to = validateAddressList(message.to);
       const cc = optionalAddresses(message.cc);
       const bcc = optionalAddresses(message.bcc);
