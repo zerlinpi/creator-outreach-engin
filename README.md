@@ -6,7 +6,7 @@ The connector now supports multiple isolated sender mailboxes behind one MCP end
 
 ## Mailbox Manager UI (recommended)
 
-Version **0.3.4** hardens the browser mailbox manager so the server does not need one environment-variable block per mailbox.
+Version **0.3.5** hardens the browser mailbox manager so the server does not need one environment-variable block per mailbox.
 
 Configure only the admin/encryption secrets:
 
