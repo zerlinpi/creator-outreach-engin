@@ -4,7 +4,7 @@ Last updated: 2026-09-22
 
 ## Current release target
 
-v0.3.0 is the production-hardening release for many-mailbox operation. The connector keeps the seven-tool MCP surface while adding a browser Mailbox Manager and fail-closed account isolation suitable for roughly 10–50 configured mailboxes.
+v0.3.5 is the current production-hardening release for many-mailbox operation. The connector keeps the seven-tool MCP surface while adding a browser Mailbox Manager, fail-closed account isolation, deployment probes, stricter runtime validation, and safer reverse-proxy operation suitable for roughly 10–50 configured mailboxes.
 
 ## Implemented and repository-verified
 
@@ -21,6 +21,9 @@ v0.3.0 is the production-hardening release for many-mailbox operation. The conne
 - Alibaba/Gmail implicit TLS SMTP plus STARTTLS mode for providers such as Microsoft 365.
 - Atomic/serialized Mailbox Manager mutations across encrypted storage and runtime registry.
 - Admin no-store/frame-deny/cross-origin-write protections plus failed-auth throttling.
+- Authenticated external admin JavaScript with no inline event handlers, no `innerHTML` mailbox rendering, and a stricter script CSP.
+- Optional loopback-only connector binding for same-host Nginx deployments plus graceful SIGTERM/SIGINT shutdown.
+- Post-deployment probe checks for health/readiness, admin assets, OAuth discovery, MCP auth challenge, and accidental exposure of `.env`, `.git`, package metadata, or encrypted mailbox storage.
 - OAuth PKCE, required `mcp:mail` scope, authorization/token throttling, bounded transient state, and rotating refresh tokens with in-process replay rejection.
 - Process liveness at `/health` and mailbox readiness at `/ready`.
 - Bounded JSON/message/batch/idempotency limits.
