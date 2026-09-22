@@ -4,6 +4,8 @@ import { dirname } from 'node:path';
 import { z } from 'zod';
 import type { MailAccountConfig, MailRuntimeConfig } from '../config.js';
 
+const SmtpSecuritySchema = z.enum(['tls', 'starttls']);
+
 const AccountSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9_]{0,31}$/),
   username: z.string().email(),
@@ -12,7 +14,8 @@ const AccountSchema = z.object({
   imapHost: z.string().min(1).max(253),
   imapPort: z.number().int().min(1).max(65535),
   smtpHost: z.string().min(1).max(253),
-  smtpPort: z.number().int().min(1).max(65535)
+  smtpPort: z.number().int().min(1).max(65535),
+  smtpSecurity: SmtpSecuritySchema.default('tls')
 });
 
 export type ManagedAccountInput = z.infer<typeof AccountSchema>;
@@ -31,6 +34,7 @@ interface StoredAccount {
   imapPort: number;
   smtpHost: string;
   smtpPort: number;
+  smtpSecurity?: 'tls' | 'starttls';
   secret: EncryptedSecret;
 }
 
@@ -48,6 +52,7 @@ export interface ManagedAccountMetadata {
   imapPort: number;
   smtpHost: string;
   smtpPort: number;
+  smtpSecurity: 'tls' | 'starttls';
   hasPassword: true;
 }
 
@@ -59,7 +64,11 @@ function encrypt(password: string, secret: string): EncryptedSecret {
   const iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', keyFromSecret(secret), iv);
   const ciphertext = Buffer.concat([cipher.update(password, 'utf8'), cipher.final()]);
-  return { iv: iv.toString('base64url'), tag: cipher.getAuthTag().toString('base64url'), ciphertext: ciphertext.toString('base64url') };
+  return {
+    iv: iv.toString('base64url'),
+    tag: cipher.getAuthTag().toString('base64url'),
+    ciphertext: ciphertext.toString('base64url')
+  };
 }
 
 function decrypt(value: EncryptedSecret, secret: string): string {
@@ -68,7 +77,13 @@ function decrypt(value: EncryptedSecret, secret: string): string {
   return Buffer.concat([decipher.update(Buffer.from(value.ciphertext, 'base64url')), decipher.final()]).toString('utf8');
 }
 
+function smtpSecurity(value: 'tls' | 'starttls') {
+  return value === 'starttls' ? { secure: false, requireTLS: true } : { secure: true, requireTLS: undefined };
+}
+
 export class EncryptedAccountStore {
+  private mutationTail: Promise<void> = Promise.resolve();
+
   constructor(
     private readonly filePath: string,
     private readonly secret: string,
@@ -95,6 +110,12 @@ export class EncryptedAccountStore {
     await rename(temp, this.filePath);
   }
 
+  private mutate<T>(operation: () => Promise<T>): Promise<T> {
+    const run = this.mutationTail.then(operation, operation);
+    this.mutationTail = run.then(() => undefined, () => undefined);
+    return run;
+  }
+
   async list(): Promise<ManagedAccountMetadata[]> {
     const document = await this.readDocument();
     return document.accounts.map((account) => ({
@@ -105,27 +126,37 @@ export class EncryptedAccountStore {
       imapPort: account.imapPort,
       smtpHost: account.smtpHost,
       smtpPort: account.smtpPort,
+      smtpSecurity: account.smtpSecurity ?? 'tls',
       hasPassword: true
     }));
   }
 
-  async loadAll(base: Pick<MailRuntimeConfig, 'maxMessageBytes' | 'searchSourceBytes' | 'imap' | 'smtp'>): Promise<{
+  async loadAll(base: Pick<MailRuntimeConfig, 'maxMessageBytes' | 'searchSourceBytes' | 'messageRefSecret' | 'imap' | 'smtp'>): Promise<{
     defaultAccount?: string;
     accounts: MailAccountConfig[];
   }> {
     const document = await this.readDocument();
     return {
       defaultAccount: document.defaultAccount,
-      accounts: document.accounts.map((account) => ({
-        id: account.id,
-        username: account.username,
-        appPassword: decrypt(account.secret, this.secret),
-        fromName: account.fromName,
-        maxMessageBytes: base.maxMessageBytes,
-        searchSourceBytes: base.searchSourceBytes,
-        imap: { ...base.imap, host: account.imapHost, port: account.imapPort },
-        smtp: { ...base.smtp, host: account.smtpHost, port: account.smtpPort }
-      }))
+      accounts: document.accounts.map((account) => {
+        const security = account.smtpSecurity ?? 'tls';
+        return {
+          id: account.id,
+          username: account.username,
+          appPassword: decrypt(account.secret, this.secret),
+          fromName: account.fromName,
+          maxMessageBytes: base.maxMessageBytes,
+          searchSourceBytes: base.searchSourceBytes,
+          messageRefSecret: base.messageRefSecret,
+          imap: { ...base.imap, host: account.imapHost, port: account.imapPort },
+          smtp: {
+            ...base.smtp,
+            ...smtpSecurity(security),
+            host: account.smtpHost,
+            port: account.smtpPort
+          }
+        };
+      })
     };
   }
 
@@ -141,42 +172,50 @@ export class EncryptedAccountStore {
       imapHost: account.imapHost,
       imapPort: account.imapPort,
       smtpHost: account.smtpHost,
-      smtpPort: account.smtpPort
+      smtpPort: account.smtpPort,
+      smtpSecurity: account.smtpSecurity ?? 'tls'
     };
   }
 
   async upsert(input: ManagedAccountInput): Promise<void> {
     const account = AccountSchema.parse(input);
-    const document = await this.readDocument();
-    const index = document.accounts.findIndex((item) => item.id === account.id);
-    const stored: StoredAccount = {
-      id: account.id,
-      username: account.username.toLowerCase(),
-      fromName: account.fromName,
-      imapHost: account.imapHost,
-      imapPort: account.imapPort,
-      smtpHost: account.smtpHost,
-      smtpPort: account.smtpPort,
-      secret: encrypt(account.appPassword, this.secret)
-    };
-    if (index >= 0) document.accounts[index] = stored;
-    else {
-      if (document.accounts.length >= this.maxAccounts) throw new Error('Mailbox Manager account limit reached.');
-      document.accounts.push(stored);
-    }
-    await this.writeDocument(document);
+    await this.mutate(async () => {
+      const document = await this.readDocument();
+      const index = document.accounts.findIndex((item) => item.id === account.id);
+      const stored: StoredAccount = {
+        id: account.id,
+        username: account.username.toLowerCase(),
+        fromName: account.fromName,
+        imapHost: account.imapHost,
+        imapPort: account.imapPort,
+        smtpHost: account.smtpHost,
+        smtpPort: account.smtpPort,
+        smtpSecurity: account.smtpSecurity,
+        secret: encrypt(account.appPassword, this.secret)
+      };
+      if (index >= 0) document.accounts[index] = stored;
+      else {
+        if (document.accounts.length >= this.maxAccounts) throw new Error('Mailbox Manager account limit reached.');
+        document.accounts.push(stored);
+      }
+      await this.writeDocument(document);
+    });
   }
 
   async remove(id: string): Promise<void> {
-    const document = await this.readDocument();
-    document.accounts = document.accounts.filter((account) => account.id !== id);
-    if (document.defaultAccount === id) document.defaultAccount = document.accounts[0]?.id;
-    await this.writeDocument(document);
+    await this.mutate(async () => {
+      const document = await this.readDocument();
+      document.accounts = document.accounts.filter((account) => account.id !== id);
+      if (document.defaultAccount === id) document.defaultAccount = document.accounts[0]?.id;
+      await this.writeDocument(document);
+    });
   }
 
   async setDefault(id: string): Promise<void> {
-    const document = await this.readDocument();
-    document.defaultAccount = id;
-    await this.writeDocument(document);
+    await this.mutate(async () => {
+      const document = await this.readDocument();
+      document.defaultAccount = id;
+      await this.writeDocument(document);
+    });
   }
 }
