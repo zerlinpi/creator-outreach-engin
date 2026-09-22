@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
 import type { SendMailOptions } from 'nodemailer';
-import type { AppConfig } from '../config.js';
+import type { MailRuntimeConfig } from '../config.js';
 import { ConnectorError } from '../errors.js';
 import { normalizeAddress, validateAddressList } from './addresses.js';
 import type { OutgoingMessage, SendResult } from './types.js';
@@ -16,7 +16,7 @@ interface MailTransport {
 
 const MAX_ENVELOPE_RECIPIENTS = 21;
 
-export function buildSmtpTransportOptions(config: AppConfig) {
+export function buildSmtpTransportOptions(config: MailRuntimeConfig) {
   return {
     host: config.smtp.host,
     port: config.smtp.port,
@@ -38,7 +38,7 @@ function enforceEnvelopeRecipientLimit(to: string[], cc?: string[], bcc?: string
   if (recipients.size > MAX_ENVELOPE_RECIPIENTS) {
     throw new ConnectorError(
       'RATE_LIMITED',
-      `Message has too many unique recipients (max ${MAX_ENVELOPE_RECIPIENTS}).`
+      'Message has too many unique recipients (max ' + MAX_ENVELOPE_RECIPIENTS + ').'
     );
   }
 }
@@ -65,7 +65,7 @@ function classifySmtpError(error: unknown): ConnectorError {
 export class SmtpMailClient {
   private readonly transport: MailTransport;
 
-  constructor(private readonly config: AppConfig, transport?: MailTransport) {
+  constructor(private readonly config: MailRuntimeConfig, transport?: MailTransport) {
     this.transport = transport ?? (nodemailer.createTransport(buildSmtpTransportOptions(config)) as MailTransport);
   }
 
@@ -110,11 +110,7 @@ export class SmtpMailClient {
         throw new ConnectorError('RECIPIENT_REJECTED', 'Mail provider did not accept the primary recipient.');
       }
 
-      return {
-        accepted,
-        rejected,
-        messageId: info.messageId
-      };
+      return { accepted, rejected, messageId: info.messageId };
     } catch (error) {
       if (error instanceof ConnectorError) throw error;
       throw classifySmtpError(error);
