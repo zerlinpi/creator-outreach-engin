@@ -96,35 +96,56 @@ label span{display:block;margin-bottom:5px}input,select{width:100%;box-sizing:bo
 </style></head><body><div class="wrap">
 <h1>Mailbox Manager</h1><div class="muted">Add and manage sender mailboxes. Passwords are encrypted at rest and never exposed to AI.</div>
 <div class="notice">AI reads and sends by <b>account id</b>. Keep each id stable. With multiple mailboxes, AI must select an account explicitly for ambiguous reads/writes.</div>
-<div class="bar"><div id="summary" class="muted">Loading…</div><button class="primary" onclick="openAdd()">+ Add mailbox</button></div>
+<div class="bar"><div id="summary" class="muted">Loading…</div><button id="addMailbox" class="primary" type="button">+ Add mailbox</button></div>
 <div id="cards" class="grid"></div>
 </div>
 <dialog id="dlg"><h2 id="dlgTitle">Add mailbox</h2><form id="form">
 <label><span>Account ID</span><input id="id" required pattern="[a-z][a-z0-9_]{0,31}" placeholder="geteen_us"></label>
-<label><span>Provider</span><select id="provider" onchange="preset()"><option value="aliyun">Alibaba Mail</option><option value="gmail">Gmail</option><option value="outlook">Microsoft 365 / Outlook</option><option value="custom">Custom</option></select></label>
+<label><span>Provider</span><select id="provider"><option value="aliyun">Alibaba Mail</option><option value="gmail">Gmail</option><option value="outlook">Microsoft 365 / Outlook</option><option value="custom">Custom</option></select></label>
 <label class="full"><span>Email address</span><input id="username" type="email" required></label>
 <label class="full"><span>App password / mailbox password</span><input id="password" type="password" placeholder="Leave blank when editing to keep current password"></label>
 <label class="full"><span>From name</span><input id="fromName" required placeholder="GETEEN"></label>
 <label><span>IMAP host</span><input id="imapHost" required></label><label><span>IMAP port</span><input id="imapPort" type="number" required></label>
 <label><span>SMTP host</span><input id="smtpHost" required></label><label><span>SMTP port</span><input id="smtpPort" type="number" required></label>
 <label class="full"><span>SMTP security</span><select id="smtpSecurity"><option value="tls">Implicit TLS (usually 465)</option><option value="starttls">STARTTLS (usually 587)</option></select></label>
-<div class="full row"><button type="button" class="ghost" onclick="dlg.close()">Cancel</button><button class="primary" type="submit">Save mailbox</button></div>
+<div class="full row"><button id="cancelDialog" type="button" class="ghost">Cancel</button><button class="primary" type="submit">Save mailbox</button></div>
 </form><div id="formStatus" class="status"></div></dialog>
 <script>
-const dlg=document.getElementById('dlg');let state=null;
+const must=id=>{const el=document.getElementById(id);if(!el)throw new Error('Missing admin UI element: '+id);return el};
+const dlg=must('dlg');
+const dlgTitle=must('dlgTitle');
+const form=must('form');
+const accountId=must('id');
+const providerSelect=must('provider');
+const usernameInput=must('username');
+const passwordInput=must('password');
+const fromNameInput=must('fromName');
+const imapHostInput=must('imapHost');
+const imapPortInput=must('imapPort');
+const smtpHostInput=must('smtpHost');
+const smtpPortInput=must('smtpPort');
+const smtpSecuritySelect=must('smtpSecurity');
+const formStatus=must('formStatus');
+const summary=must('summary');
+const cards=must('cards');
+const addMailboxButton=must('addMailbox');
+const cancelDialogButton=must('cancelDialog');
+let state=null;
 const presets={aliyun:['imap.qiye.aliyun.com',993,'smtp.qiye.aliyun.com',465,'tls'],gmail:['imap.gmail.com',993,'smtp.gmail.com',465,'tls'],outlook:['outlook.office365.com',993,'smtp.office365.com',587,'starttls']};
-function preset(){const p=presets[provider.value];if(!p)return;[imapHost.value,imapPort.value,smtpHost.value,smtpPort.value,smtpSecurity.value]=p}
+function preset(){const p=presets[providerSelect.value];if(!p)return;[imapHostInput.value,imapPortInput.value,smtpHostInput.value,smtpPortInput.value,smtpSecuritySelect.value]=p}
 function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 async function api(path,opt={}){const r=await fetch('/admin/api'+path,{headers:{'content-type':'application/json'},...opt});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Request failed');return j}
-async function load(){state=await api('/accounts');summary.textContent=state.accounts.length+' configured mailbox(es)'+(state.accounts.length>1?' · explicit account required for AI reads/sends':'');
-cards.innerHTML=state.accounts.map(a=>'<div class="card"><div><span class="badge">'+esc(a.source)+'</span></div><div class="addr">'+esc(a.id)+' · '+esc(a.username)+'</div><div>'+esc(a.fromName)+'</div><div class="small">'+esc(a.imapHost||'')+' '+(a.imapPort||'')+' → '+esc(a.smtpHost||'')+' '+(a.smtpPort||'')+' · '+esc(a.smtpSecurity||'tls')+'</div><div class="row"><button class="ghost" data-action="test" data-id="'+esc(a.id)+'">Test</button>'+(a.source==='ui'?'<button class="ghost" data-action="edit" data-id="'+esc(a.id)+'">Edit</button><button class="danger" data-action="delete" data-id="'+esc(a.id)+'">Delete</button>':'')+'</div><div id="s-'+esc(a.id)+'" class="status"></div></div>').join('')}
-cards.addEventListener('click',e=>{const target=e.target instanceof Element?e.target.closest('button[data-action][data-id]'):null;if(!target)return;const i=target.getAttribute('data-id');const action=target.getAttribute('data-action');if(!i||!action)return;if(action==='test')void testBox(i);else if(action==='edit')editBox(i);else if(action==='delete')void delBox(i)})
-function openAdd(){dlgTitle.textContent='Add mailbox';form.reset();id.disabled=false;provider.value='aliyun';preset();dlg.showModal()}
-function editBox(i){const a=state.accounts.find(x=>x.id===i);dlgTitle.textContent='Edit '+i;id.value=a.id;id.disabled=true;username.value=a.username;fromName.value=a.fromName;imapHost.value=a.imapHost;smtpHost.value=a.smtpHost;imapPort.value=a.imapPort;smtpPort.value=a.smtpPort;smtpSecurity.value=a.smtpSecurity||'tls';provider.value='custom';password.value='';dlg.showModal()}
-form.onsubmit=async e=>{e.preventDefault();formStatus.textContent='Saving…';try{await api('/accounts',{method:'POST',body:JSON.stringify({id:id.value,username:username.value,appPassword:password.value||undefined,fromName:fromName.value,imapHost:imapHost.value,imapPort:+imapPort.value,smtpHost:smtpHost.value,smtpPort:+smtpPort.value,smtpSecurity:smtpSecurity.value})});dlg.close();await load()}catch(x){formStatus.textContent=x.message}}
-async function testBox(i){const el=document.getElementById('s-'+i);el.textContent='Testing IMAP + SMTP…';try{const r=await api('/accounts/'+i+'/test',{method:'POST'});el.textContent=r.ok?'✓ IMAP and SMTP ready':'Check failed: '+JSON.stringify(r)}catch(x){el.textContent=x.message}}
-async function delBox(i){if(!confirm('Delete '+i+'?'))return;await api('/accounts/'+i,{method:'DELETE'});await load()}
-load().catch(e=>summary.textContent=e.message);
+async function load(){state=await api('/accounts');summary.textContent=state.accounts.length+' configured mailbox(es)'+(state.accounts.length>1?' · explicit account required for AI reads/sends':'');cards.innerHTML=state.accounts.map(a=>'<div class="card"><div><span class="badge">'+esc(a.source)+'</span></div><div class="addr">'+esc(a.id)+' · '+esc(a.username)+'</div><div>'+esc(a.fromName)+'</div><div class="small">'+esc(a.imapHost||'')+' '+(a.imapPort||'')+' → '+esc(a.smtpHost||'')+' '+(a.smtpPort||'')+' · '+esc(a.smtpSecurity||'tls')+'</div><div class="row"><button class="ghost" type="button" data-action="test" data-id="'+esc(a.id)+'">Test</button>'+(a.source==='ui'?'<button class="ghost" type="button" data-action="edit" data-id="'+esc(a.id)+'">Edit</button><button class="danger" type="button" data-action="delete" data-id="'+esc(a.id)+'">Delete</button>':'')+'</div><div id="s-'+esc(a.id)+'" class="status"></div></div>').join('')}
+function openAdd(){formStatus.textContent='';dlgTitle.textContent='Add mailbox';form.reset();accountId.disabled=false;providerSelect.value='aliyun';preset();dlg.showModal()}
+function editBox(i){const a=state?.accounts?.find(x=>x.id===i);if(!a)return;formStatus.textContent='';dlgTitle.textContent='Edit '+i;accountId.value=a.id;accountId.disabled=true;usernameInput.value=a.username;fromNameInput.value=a.fromName;imapHostInput.value=a.imapHost;smtpHostInput.value=a.smtpHost;imapPortInput.value=a.imapPort;smtpPortInput.value=a.smtpPort;smtpSecuritySelect.value=a.smtpSecurity||'tls';providerSelect.value='custom';passwordInput.value='';dlg.showModal()}
+async function testBox(i){const el=document.getElementById('s-'+i);if(!el)return;el.textContent='Testing IMAP + SMTP…';try{const r=await api('/accounts/'+i+'/test',{method:'POST'});el.textContent=r.ok?'✓ IMAP and SMTP ready':'Check failed: '+JSON.stringify(r)}catch(x){el.textContent=x instanceof Error?x.message:'Mailbox test failed'}}
+async function delBox(i){if(!confirm('Delete '+i+'?'))return;const el=document.getElementById('s-'+i);try{await api('/accounts/'+i,{method:'DELETE'});await load()}catch(x){if(el)el.textContent=x instanceof Error?x.message:'Delete failed'}}
+providerSelect.addEventListener('change',preset);
+addMailboxButton.addEventListener('click',openAdd);
+cancelDialogButton.addEventListener('click',()=>dlg.close());
+cards.addEventListener('click',e=>{const target=e.target instanceof Element?e.target.closest('button[data-action][data-id]'):null;if(!target)return;const i=target.getAttribute('data-id');const action=target.getAttribute('data-action');if(!i||!action)return;if(action==='test')void testBox(i);else if(action==='edit')editBox(i);else if(action==='delete')void delBox(i)});
+form.addEventListener('submit',async e=>{e.preventDefault();formStatus.textContent='Saving…';try{await api('/accounts',{method:'POST',body:JSON.stringify({id:accountId.value,username:usernameInput.value,appPassword:passwordInput.value||undefined,fromName:fromNameInput.value,imapHost:imapHostInput.value,imapPort:+imapPortInput.value,smtpHost:smtpHostInput.value,smtpPort:+smtpPortInput.value,smtpSecurity:smtpSecuritySelect.value})});dlg.close();await load()}catch(x){formStatus.textContent=x instanceof Error?x.message:'Save failed'}});
+load().catch(e=>{summary.textContent=e instanceof Error?e.message:'Mailbox list failed'});
 </script></body></html>`;
 }
 
