@@ -6,10 +6,11 @@ import { runMailDiagnostics } from './diagnostics.js';
 import { FailureRateLimiter, applySensitiveHeaders, isSameOriginMutation, requestClientKey } from './http-security.js';
 import { createMailAccountRuntime, type MailAccountRegistry } from './mail/accounts.js';
 import { EncryptedAccountStore } from './mail/account-store.js';
+import { isHostnameOrIpv4 } from './network.js';
 
 const HostSchema = z.string().trim().min(1).max(253).refine(
-  (value) => /^[A-Za-z0-9.-]+$/.test(value) && !value.includes('..') && !value.startsWith('.') && !value.endsWith('.'),
-  'Host must be a hostname or IPv4 address without scheme, path, port, or wildcard.'
+  isHostnameOrIpv4,
+  'Host must be a valid hostname or IPv4 address without scheme, path, port, or wildcard.'
 );
 
 const AccountInput = z.object({
