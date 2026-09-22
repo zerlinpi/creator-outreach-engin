@@ -67,7 +67,7 @@ export function registerMailTools(
             };
           }
         });
-        return result({ defaultAccount: accounts.defaultAccountId ?? null, accountCount: rows.length, accounts: rows });
+        return result({ accountCount: rows.length, accountSelectionRequired: rows.length > 1, accounts: rows });
       } catch (e) { return failure(e); }
     }
   );
@@ -75,7 +75,7 @@ export function registerMailTools(
   server.registerTool(
     'search_emails',
     {
-      description: 'Search one mailbox or all configured mailboxes. Set all_accounts=true when the user asks to check every mailbox. All-account results always include account and accountAddress to prevent cross-mailbox confusion.',
+      description: 'Search one mailbox or all configured mailboxes. With multiple mailboxes, account is required unless all_accounts=true. All-account results include account/accountAddress; per_account_limit bounds fan-out work.',
       inputSchema: z.object({
         account: optionalAccountId,
         all_accounts: z.boolean().default(false),
@@ -87,7 +87,8 @@ export function registerMailTools(
         unread: z.boolean().optional(),
         since: z.string().datetime().optional(),
         before: z.string().datetime().optional(),
-        limit: z.number().int().min(1).max(100).optional()
+        limit: z.number().int().min(1).max(100).optional(),
+        per_account_limit: z.number().int().min(1).max(50).optional()
       }).refine((value) => !(value.all_accounts && value.account), 'account must be omitted when all_accounts is true'),
       annotations: { readOnlyHint: true }
     },
@@ -102,7 +103,7 @@ export function registerMailTools(
           unread: a.unread,
           since: a.since ? new Date(a.since) : undefined,
           before: a.before ? new Date(a.before) : undefined,
-          limit: a.limit
+          limit: a.all_accounts ? (a.per_account_limit ?? Math.min(a.limit ?? 20, 20)) : a.limit
         };
 
         if (a.all_accounts) {
