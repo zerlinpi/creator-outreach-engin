@@ -24,5 +24,23 @@ describe('health endpoint', () => {
     const response = await fetch(`http://127.0.0.1:${port}/health`);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, service: 'campx-creator-mail' });
+
+    const ready = await fetch(`http://127.0.0.1:${port}/ready`);
+    expect(ready.status).toBe(200);
+    expect(await ready.json()).toEqual({ ok: true, service: 'campx-creator-mail' });
+  });
+
+  it('reports not-ready when the service has no configured mailboxes', async () => {
+    const app = createHttpApp({
+      authToken: '1234567890abcdef',
+      allowedHosts: ['127.0.0.1']
+    });
+    const server = app.listen(0, '127.0.0.1');
+    servers.push(server);
+    await once(server, 'listening');
+    const { port } = server.address() as AddressInfo;
+    const ready = await fetch(`http://127.0.0.1:${port}/ready`);
+    expect(ready.status).toBe(503);
+    expect(await ready.json()).toEqual({ ok: false, service: 'campx-creator-mail' });
   });
 });
