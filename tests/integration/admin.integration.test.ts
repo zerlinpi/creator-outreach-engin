@@ -64,6 +64,44 @@ describe('Mailbox Manager admin UI', () => {
     expect(adminHtml).toContain('id="addMailbox"');
     expect(adminHtml).toContain('id="cancelDialog"');
 
+    const browserElements = new Map<string, any>();
+    const browserListeners = new Map<string, Map<string, (...args: any[]) => unknown>>();
+    const elementFor = (elementId: string) => {
+      if (!browserElements.has(elementId)) {
+        const listeners = new Map<string, (...args: any[]) => unknown>();
+        browserListeners.set(elementId, listeners);
+        browserElements.set(elementId, {
+          id: elementId,
+          value: '',
+          disabled: false,
+          textContent: '',
+          innerHTML: '',
+          dataset: {},
+          reset() {},
+          showModal() {},
+          close() {},
+          addEventListener(type: string, handler: (...args: any[]) => unknown) { listeners.set(type, handler); },
+          getAttribute() { return null; },
+          closest() { return null; }
+        });
+      }
+      return browserElements.get(elementId);
+    };
+    class BrowserElement {}
+    const browserContext = {
+      document: { getElementById: (elementId: string) => elementFor(elementId) },
+      Element: BrowserElement,
+      fetch: async () => ({ ok: true, json: async () => ({ accounts: [] }) }),
+      confirm: () => true,
+      console
+    };
+    expect(() => new Script(adminScript).runInNewContext(browserContext)).not.toThrow();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(elementFor('summary').textContent).toBe('0 configured mailbox(es)');
+    expect(browserListeners.get('addMailbox')?.has('click')).toBe(true);
+    expect(browserListeners.get('provider')?.has('change')).toBe(true);
+    expect(browserListeners.get('form')?.has('submit')).toBe(true);
+
     const created = await fetch(root + '/admin/api/accounts', {
       method: 'POST',
       headers: { authorization: auth, 'content-type': 'application/json' },
