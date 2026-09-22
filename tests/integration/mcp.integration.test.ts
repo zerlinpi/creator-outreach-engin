@@ -260,7 +260,9 @@ describe('remote MCP HTTP surface', () => {
     const { client, transport, campx, hassky } = await openMultiClient();
     try {
       const mailboxes = jsonText(await client.callTool({ name: 'list_mailboxes', arguments: {} }));
-      expect(mailboxes.defaultAccount).toBe('campx');
+      expect(mailboxes.accountSelectionRequired).toBe(true);
+      expect(mailboxes.accountCount).toBe(2);
+      expect(mailboxes).not.toHaveProperty('defaultAccount');
       expect(mailboxes.accounts.map((entry: { account: string }) => entry.account)).toEqual(['campx', 'hassky']);
 
       const sharedKey = 'same-business-key-001';
