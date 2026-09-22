@@ -74,7 +74,7 @@ label span{display:block;margin-bottom:5px}input,select{width:100%;box-sizing:bo
 </div>
 <dialog id="dlg"><h2 id="dlgTitle">Add mailbox</h2><form id="form">
 <label><span>Account ID</span><input id="id" required pattern="[a-z][a-z0-9_]{0,31}" placeholder="geteen_us"></label>
-<label><span>Provider</span><select id="provider" onchange="preset()"><option value="aliyun">Alibaba Mail</option><option value="gmail">Gmail</option><option value="outlook">Outlook / Microsoft 365</option><option value="custom">Custom</option></select></label>
+<label><span>Provider</span><select id="provider" onchange="preset()"><option value="aliyun">Alibaba Mail</option><option value="gmail">Gmail</option><option value="custom">Custom</option></select></label>
 <label class="full"><span>Email address</span><input id="username" type="email" required></label>
 <label class="full"><span>App password / mailbox password</span><input id="password" type="password" placeholder="Leave blank when editing to keep current password"></label>
 <label class="full"><span>From name</span><input id="fromName" required placeholder="GETEEN"></label>
@@ -84,7 +84,7 @@ label span{display:block;margin-bottom:5px}input,select{width:100%;box-sizing:bo
 </form><div id="formStatus" class="status"></div></dialog>
 <script>
 const dlg=document.getElementById('dlg'); let editing=null; let state=null;
-const presets={aliyun:['imap.qiye.aliyun.com',993,'smtp.qiye.aliyun.com',465],gmail:['imap.gmail.com',993,'smtp.gmail.com',465],outlook:['outlook.office365.com',993,'smtp.office365.com',587]};
+const presets={aliyun:['imap.qiye.aliyun.com',993,'smtp.qiye.aliyun.com',465],gmail:['imap.gmail.com',993,'smtp.gmail.com',465]};
 function preset(){const p=presets[provider.value];if(!p)return;[imapHost.value,imapPort.value,smtpHost.value,smtpPort.value]=p}
 function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 async function api(path,opt={}){const r=await fetch('/admin/api'+path,{headers:{'content-type':'application/json'},...opt});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Request failed');return j}
