@@ -53,7 +53,7 @@ export interface TransportConfig {
   connectionTimeout: number;
   greetingTimeout: number;
   socketTimeout: number;
-  maxConcurrency: number;
+  maxConcurrency?: number;
 }
 
 export interface MailRuntimeConfig {
@@ -87,8 +87,8 @@ export interface AppConfig extends MailRuntimeConfig {
   mailAdmin?: MailAdminConfig;
   defaultAccount?: string;
   accounts?: Record<string, MailAccountConfig>;
-  allAccountReadConcurrency: number;
-  multiAccountSendConcurrency: number;
+  allAccountReadConcurrency?: number;
+  multiAccountSendConcurrency?: number;
 }
 
 function isSafeHost(value: string): boolean {
