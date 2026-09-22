@@ -3,18 +3,25 @@ import type { Express, NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
 import type { AppConfig, MailAccountConfig, MailAdminConfig } from './config.js';
 import { runMailDiagnostics } from './diagnostics.js';
+import { FailureRateLimiter, applySensitiveHeaders, isSameOriginMutation, requestClientKey } from './http-security.js';
 import { createMailAccountRuntime, type MailAccountRegistry } from './mail/accounts.js';
 import { EncryptedAccountStore } from './mail/account-store.js';
+
+const HostSchema = z.string().trim().min(1).max(253).refine(
+  (value) => /^[A-Za-z0-9.-]+$/.test(value) && !value.includes('..') && !value.startsWith('.') && !value.endsWith('.'),
+  'Host must be a hostname or IPv4 address without scheme, path, port, or wildcard.'
+);
 
 const AccountInput = z.object({
   id: z.string().regex(/^[a-z][a-z0-9_]{0,31}$/),
   username: z.string().email(),
   appPassword: z.string().optional(),
   fromName: z.string().min(1).max(120),
-  imapHost: z.string().min(1).max(253),
+  imapHost: HostSchema,
   imapPort: z.number().int().min(1).max(65535),
-  smtpHost: z.string().min(1).max(253),
-  smtpPort: z.number().int().min(1).max(65535)
+  smtpHost: HostSchema,
+  smtpPort: z.number().int().min(1).max(65535),
+  smtpSecurity: z.enum(['tls', 'starttls']).default('tls')
 });
 
 function safeEqual(a: string, b: string): boolean {
@@ -24,20 +31,39 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 function adminAuth(password: string) {
+  const limiter = new FailureRateLimiter(10, 5 * 60 * 1000, 15 * 60 * 1000);
+
   return (req: Request, res: Response, next: NextFunction) => {
+    applySensitiveHeaders(res);
+    const key = requestClientKey(req);
+    const allowed = limiter.check(key);
+    if (!allowed.allowed) {
+      res.setHeader('Retry-After', String(allowed.retryAfterSeconds ?? 900));
+      return res.status(429).send('Too many failed admin authentication attempts.');
+    }
+
     const header = req.header('authorization') ?? '';
     if (header.startsWith('Basic ')) {
       try {
         const [username, supplied = ''] = Buffer.from(header.slice(6), 'base64').toString('utf8').split(':', 2);
-        if (username === 'admin' && safeEqual(supplied, password)) return next();
+        if (username === 'admin' && safeEqual(supplied, password)) {
+          limiter.success(key);
+          return next();
+        }
       } catch {}
     }
+
+    limiter.failure(key);
     res.setHeader('WWW-Authenticate', 'Basic realm="Mailbox Manager", charset="UTF-8"');
     return res.status(401).send('Authentication required.');
   };
 }
 
 function toConfig(input: z.infer<typeof AccountInput> & { appPassword: string }, base: AppConfig): MailAccountConfig {
+  const smtpSecurity = input.smtpSecurity === 'starttls'
+    ? { secure: false, requireTLS: true }
+    : { secure: true, requireTLS: undefined };
+
   return {
     id: input.id,
     username: input.username.toLowerCase(),
@@ -45,8 +71,9 @@ function toConfig(input: z.infer<typeof AccountInput> & { appPassword: string },
     fromName: input.fromName,
     maxMessageBytes: base.maxMessageBytes,
     searchSourceBytes: base.searchSourceBytes,
+    messageRefSecret: base.messageRefSecret,
     imap: { ...base.imap, host: input.imapHost, port: input.imapPort },
-    smtp: { ...base.smtp, host: input.smtpHost, port: input.smtpPort }
+    smtp: { ...base.smtp, ...smtpSecurity, host: input.smtpHost, port: input.smtpPort }
   };
 }
 
@@ -68,31 +95,32 @@ label span{display:block;margin-bottom:5px}input,select{width:100%;box-sizing:bo
 @media(max-width:640px){.wrap{margin:22px auto}form{grid-template-columns:1fr}.full{grid-column:1}.bar{align-items:flex-start;gap:12px;flex-direction:column}}
 </style></head><body><div class="wrap">
 <h1>Mailbox Manager</h1><div class="muted">Add and manage sender mailboxes. Passwords are encrypted at rest and never exposed to AI.</div>
-<div class="notice">AI reads and sends by <b>account id</b>. Keep each id stable (for example: campx, hassky, geteen_us). Environment-managed accounts are read-only here.</div>
+<div class="notice">AI reads and sends by <b>account id</b>. Keep each id stable. With multiple mailboxes, AI must select an account explicitly for ambiguous reads/writes.</div>
 <div class="bar"><div id="summary" class="muted">Loading…</div><button class="primary" onclick="openAdd()">+ Add mailbox</button></div>
 <div id="cards" class="grid"></div>
 </div>
 <dialog id="dlg"><h2 id="dlgTitle">Add mailbox</h2><form id="form">
 <label><span>Account ID</span><input id="id" required pattern="[a-z][a-z0-9_]{0,31}" placeholder="geteen_us"></label>
-<label><span>Provider</span><select id="provider" onchange="preset()"><option value="aliyun">Alibaba Mail</option><option value="gmail">Gmail</option><option value="custom">Custom</option></select></label>
+<label><span>Provider</span><select id="provider" onchange="preset()"><option value="aliyun">Alibaba Mail</option><option value="gmail">Gmail</option><option value="outlook">Microsoft 365 / Outlook</option><option value="custom">Custom</option></select></label>
 <label class="full"><span>Email address</span><input id="username" type="email" required></label>
 <label class="full"><span>App password / mailbox password</span><input id="password" type="password" placeholder="Leave blank when editing to keep current password"></label>
 <label class="full"><span>From name</span><input id="fromName" required placeholder="GETEEN"></label>
 <label><span>IMAP host</span><input id="imapHost" required></label><label><span>IMAP port</span><input id="imapPort" type="number" required></label>
 <label><span>SMTP host</span><input id="smtpHost" required></label><label><span>SMTP port</span><input id="smtpPort" type="number" required></label>
+<label class="full"><span>SMTP security</span><select id="smtpSecurity"><option value="tls">Implicit TLS (usually 465)</option><option value="starttls">STARTTLS (usually 587)</option></select></label>
 <div class="full row"><button type="button" class="ghost" onclick="dlg.close()">Cancel</button><button class="primary" type="submit">Save mailbox</button></div>
 </form><div id="formStatus" class="status"></div></dialog>
 <script>
-const dlg=document.getElementById('dlg'); let editing=null; let state=null;
-const presets={aliyun:['imap.qiye.aliyun.com',993,'smtp.qiye.aliyun.com',465],gmail:['imap.gmail.com',993,'smtp.gmail.com',465]};
-function preset(){const p=presets[provider.value];if(!p)return;[imapHost.value,imapPort.value,smtpHost.value,smtpPort.value]=p}
+const dlg=document.getElementById('dlg');let state=null;
+const presets={aliyun:['imap.qiye.aliyun.com',993,'smtp.qiye.aliyun.com',465,'tls'],gmail:['imap.gmail.com',993,'smtp.gmail.com',465,'tls'],outlook:['outlook.office365.com',993,'smtp.office365.com',587,'starttls']};
+function preset(){const p=presets[provider.value];if(!p)return;[imapHost.value,imapPort.value,smtpHost.value,smtpPort.value,smtpSecurity.value]=p}
 function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 async function api(path,opt={}){const r=await fetch('/admin/api'+path,{headers:{'content-type':'application/json'},...opt});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Request failed');return j}
 async function load(){state=await api('/accounts');summary.textContent=state.accounts.length+' configured mailbox(es) · default: '+(state.defaultAccount||'none');
-cards.innerHTML=state.accounts.map(a=>'<div class="card"><div><span class="badge">'+esc(a.source)+'</span>'+(a.id===state.defaultAccount?'<span class="badge default">default</span>':'')+'</div><div class="addr">'+esc(a.id)+' · '+esc(a.username)+'</div><div>'+esc(a.fromName)+'</div><div class="small">'+esc(a.imapHost||'')+' '+(a.imapPort||'')+' → '+esc(a.smtpHost||'')+' '+(a.smtpPort||'')+'</div><div class="row"><button class="ghost" onclick="testBox(\''+a.id+'\')">Test</button><button class="ghost" onclick="makeDefault(\''+a.id+'\')">Set default</button>'+(a.source==='ui'?'<button class="ghost" onclick="editBox(\''+a.id+'\')">Edit</button><button class="danger" onclick="delBox(\''+a.id+'\')">Delete</button>':'')+'</div><div id="s-'+a.id+'" class="status"></div></div>').join('')}
-function openAdd(){editing=null;dlgTitle.textContent='Add mailbox';form.reset();id.disabled=false;provider.value='aliyun';preset();dlg.showModal()}
-function editBox(i){const a=state.accounts.find(x=>x.id===i);editing=i;dlgTitle.textContent='Edit '+i;id.value=a.id;id.disabled=true;username.value=a.username;fromName.value=a.fromName;imapHost.value=a.imapHost;smtpHost.value=a.smtpHost;imapPort.value=a.imapPort;smtpPort.value=a.smtpPort;provider.value='custom';password.value='';dlg.showModal()}
-form.onsubmit=async e=>{e.preventDefault();formStatus.textContent='Saving…';try{await api('/accounts',{method:'POST',body:JSON.stringify({id:id.value,username:username.value,appPassword:password.value||undefined,fromName:fromName.value,imapHost:imapHost.value,imapPort:+imapPort.value,smtpHost:smtpHost.value,smtpPort:+smtpPort.value})});dlg.close();await load()}catch(x){formStatus.textContent=x.message}}
+cards.innerHTML=state.accounts.map(a=>'<div class="card"><div><span class="badge">'+esc(a.source)+'</span>'+(a.id===state.defaultAccount?'<span class="badge default">default</span>':'')+'</div><div class="addr">'+esc(a.id)+' · '+esc(a.username)+'</div><div>'+esc(a.fromName)+'</div><div class="small">'+esc(a.imapHost||'')+' '+(a.imapPort||'')+' → '+esc(a.smtpHost||'')+' '+(a.smtpPort||'')+' · '+esc(a.smtpSecurity||'tls')+'</div><div class="row"><button class="ghost" onclick="testBox(\''+a.id+'\')">Test</button><button class="ghost" onclick="makeDefault(\''+a.id+'\')">Set default</button>'+(a.source==='ui'?'<button class="ghost" onclick="editBox(\''+a.id+'\')">Edit</button><button class="danger" onclick="delBox(\''+a.id+'\')">Delete</button>':'')+'</div><div id="s-'+a.id+'" class="status"></div></div>').join('')}
+function openAdd(){dlgTitle.textContent='Add mailbox';form.reset();id.disabled=false;provider.value='aliyun';preset();dlg.showModal()}
+function editBox(i){const a=state.accounts.find(x=>x.id===i);dlgTitle.textContent='Edit '+i;id.value=a.id;id.disabled=true;username.value=a.username;fromName.value=a.fromName;imapHost.value=a.imapHost;smtpHost.value=a.smtpHost;imapPort.value=a.imapPort;smtpPort.value=a.smtpPort;smtpSecurity.value=a.smtpSecurity||'tls';provider.value='custom';password.value='';dlg.showModal()}
+form.onsubmit=async e=>{e.preventDefault();formStatus.textContent='Saving…';try{await api('/accounts',{method:'POST',body:JSON.stringify({id:id.value,username:username.value,appPassword:password.value||undefined,fromName:fromName.value,imapHost:imapHost.value,imapPort:+imapPort.value,smtpHost:smtpHost.value,smtpPort:+smtpPort.value,smtpSecurity:smtpSecurity.value})});dlg.close();await load()}catch(x){formStatus.textContent=x.message}}
 async function testBox(i){const el=document.getElementById('s-'+i);el.textContent='Testing IMAP + SMTP…';try{const r=await api('/accounts/'+i+'/test',{method:'POST'});el.textContent=r.ok?'✓ IMAP and SMTP ready':'Check failed: '+JSON.stringify(r)}catch(x){el.textContent=x.message}}
 async function makeDefault(i){await api('/default',{method:'POST',body:JSON.stringify({id:i})});await load()}
 async function delBox(i){if(!confirm('Delete '+i+'?'))return;await api('/accounts/'+i,{method:'DELETE'});await load()}
@@ -109,7 +137,12 @@ export function registerMailboxAdmin(
 ): void {
   const auth = adminAuth(admin.password);
   app.get('/admin', auth, (_req, res) => res.type('html').send(html()));
-  app.use('/admin/api', auth);
+  app.use('/admin/api', auth, (req, res, next) => {
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && !isSameOriginMutation(req)) {
+      return res.status(403).json({ error: 'Cross-origin admin mutation rejected.' });
+    }
+    next();
+  });
 
   app.get('/admin/api/accounts', async (_req, res) => {
     const managed = new Map((await store.list()).map((item) => [item.id, item]));
@@ -147,14 +180,18 @@ export function registerMailboxAdmin(
   });
 
   app.delete('/admin/api/accounts/:id', async (req, res) => {
-    const id = req.params.id;
-    const runtime = registry.list().find((account) => account.id === id);
-    if (!runtime) return res.status(404).json({ error: 'Mailbox not found.' });
-    if (runtime.source === 'environment') return res.status(409).json({ error: 'Environment-managed accounts are read-only in the UI.' });
-    await store.remove(id);
-    registry.remove(id);
-    if (registry.defaultAccountId) await store.setDefault(registry.defaultAccountId);
-    res.json({ ok: true });
+    try {
+      const id = req.params.id;
+      const runtime = registry.list().find((account) => account.id === id);
+      if (!runtime) return res.status(404).json({ error: 'Mailbox not found.' });
+      if (runtime.source === 'environment') return res.status(409).json({ error: 'Environment-managed accounts are read-only in the UI.' });
+      await store.remove(id);
+      registry.remove(id);
+      if (registry.defaultAccountId) await store.setDefault(registry.defaultAccountId);
+      res.json({ ok: true });
+    } catch {
+      res.status(500).json({ error: 'Mailbox configuration could not be deleted.' });
+    }
   });
 
   app.post('/admin/api/default', async (req, res) => {
@@ -172,8 +209,8 @@ export function registerMailboxAdmin(
     try {
       const runtime = registry.resolve(req.params.id);
       res.json(await runMailDiagnostics(runtime.imap, runtime.smtp));
-    } catch (error) {
-      res.status(404).json({ error: error instanceof Error ? error.message : 'Mailbox not found.' });
+    } catch {
+      res.status(404).json({ error: 'Mailbox not found or diagnostics failed.' });
     }
   });
 }
