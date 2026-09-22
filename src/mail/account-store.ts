@@ -3,17 +3,24 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { z } from 'zod';
 import type { MailAccountConfig, MailRuntimeConfig } from '../config.js';
+import { isHostnameOrIpv4 } from '../network.js';
 
 const SmtpSecuritySchema = z.enum(['tls', 'starttls']);
+const AccountIdSchema = z.string().regex(/^[a-z][a-z0-9_]{0,31}$/);
+const HostSchema = z.string().trim().min(1).max(253).refine(isHostnameOrIpv4, 'Invalid mailbox host.');
+const SenderNameSchema = z.string().trim().min(1).max(120).refine(
+  (value) => !/[\r\n]/.test(value),
+  'Sender name must not contain CR or LF characters.'
+);
 
 const AccountSchema = z.object({
-  id: z.string().regex(/^[a-z][a-z0-9_]{0,31}$/),
+  id: AccountIdSchema,
   username: z.string().email(),
-  appPassword: z.string().min(1),
-  fromName: z.string().min(1).max(120),
-  imapHost: z.string().min(1).max(253),
+  appPassword: z.string().min(1).max(4096),
+  fromName: SenderNameSchema,
+  imapHost: HostSchema,
   imapPort: z.number().int().min(1).max(65535),
-  smtpHost: z.string().min(1).max(253),
+  smtpHost: HostSchema,
   smtpPort: z.number().int().min(1).max(65535),
   smtpSecurity: SmtpSecuritySchema.default('tls')
 });
@@ -43,6 +50,39 @@ interface StoreDocument {
   defaultAccount?: string;
   accounts: StoredAccount[];
 }
+
+const EncryptedSecretSchema = z.object({
+  iv: z.string().length(16).regex(/^[A-Za-z0-9_-]+$/),
+  tag: z.string().length(22).regex(/^[A-Za-z0-9_-]+$/),
+  ciphertext: z.string().min(2).regex(/^[A-Za-z0-9_-]+$/)
+});
+
+const StoredAccountSchema = z.object({
+  id: AccountIdSchema,
+  username: z.string().email(),
+  fromName: SenderNameSchema,
+  imapHost: HostSchema,
+  imapPort: z.number().int().min(1).max(65535),
+  smtpHost: HostSchema,
+  smtpPort: z.number().int().min(1).max(65535),
+  smtpSecurity: SmtpSecuritySchema.optional(),
+  secret: EncryptedSecretSchema
+});
+
+const StoreDocumentSchema = z.object({
+  version: z.literal(1),
+  defaultAccount: AccountIdSchema.optional(),
+  accounts: z.array(StoredAccountSchema)
+}).superRefine((document, context) => {
+  const ids = new Set<string>();
+  for (const account of document.accounts) {
+    if (ids.has(account.id)) {
+      context.addIssue({ code: 'custom', path: ['accounts'], message: 'Duplicate mailbox account id in encrypted store.' });
+      return;
+    }
+    ids.add(account.id);
+  }
+});
 
 export interface ManagedAccountMetadata {
   id: string;
@@ -93,8 +133,8 @@ export class EncryptedAccountStore {
   private async readDocument(): Promise<StoreDocument> {
     try {
       const raw = await readFile(this.filePath, 'utf8');
-      const parsed = JSON.parse(raw) as StoreDocument;
-      if (parsed.version !== 1 || !Array.isArray(parsed.accounts)) throw new Error('Unsupported mailbox store format.');
+      const parsed = StoreDocumentSchema.parse(JSON.parse(raw));
+      if (parsed.accounts.length > this.maxAccounts) throw new Error('Mailbox account store exceeds configured account limit.');
       return parsed;
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
