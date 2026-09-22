@@ -38,6 +38,7 @@ jobs:
         run: |
           export NODE_ENV=production
           export CONNECTOR_AUTH_TOKEN=1234567890abcdef1234567890abcdef
+          export CONNECTOR_BIND_HOST=127.0.0.1
           export CONNECTOR_ALLOWED_HOSTS=127.0.0.1
           export MAIL_USERNAME=smoke@example.com
           export MAIL_APP_PASSWORD=smoke-password
