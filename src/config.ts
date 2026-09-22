@@ -4,7 +4,8 @@ import type { OAuthConfig } from './auth/oauth.js';
 
 const PortSchema = z.coerce.number().int().min(1).max(65535);
 const TimeoutSchema = z.coerce.number().int().min(1_000).max(120_000);
-const ByteSizeSchema = z.coerce.number().int().min(32 * 1024).max(25 * 1024 * 1024);
+const FullMessageByteSizeSchema = z.coerce.number().int().min(32 * 1024).max(25 * 1024 * 1024);
+const SearchSourceByteSizeSchema = z.coerce.number().int().min(32 * 1024).max(512 * 1024);
 const EmailSchema = z.string().email();
 const AccountIdSchema = z.string().regex(/^[a-z][a-z0-9_]{0,31}$/, 'Account ids must start with a letter and contain only lowercase letters, numbers, and underscores.');
 const ImapConcurrencySchema = z.coerce.number().int().min(1).max(8);
@@ -28,8 +29,8 @@ const EnvSchema = z.object({
   MAIL_CONNECTION_TIMEOUT_MS: TimeoutSchema.default(15_000),
   MAIL_GREETING_TIMEOUT_MS: TimeoutSchema.default(10_000),
   MAIL_SOCKET_TIMEOUT_MS: TimeoutSchema.default(30_000),
-  MAIL_MAX_MESSAGE_BYTES: ByteSizeSchema.default(10 * 1024 * 1024),
-  MAIL_SEARCH_SOURCE_BYTES: ByteSizeSchema.default(128 * 1024),
+  MAIL_MAX_MESSAGE_BYTES: FullMessageByteSizeSchema.default(10 * 1024 * 1024),
+  MAIL_SEARCH_SOURCE_BYTES: SearchSourceByteSizeSchema.default(128 * 1024),
   MAIL_MESSAGE_REF_SIGNING_KEY: z.string().min(32).optional(),
   MAIL_ALL_ACCOUNT_READ_CONCURRENCY: ReadConcurrencySchema.default(4),
   MAIL_MULTI_ACCOUNT_SEND_CONCURRENCY: SendConcurrencySchema.default(3),
