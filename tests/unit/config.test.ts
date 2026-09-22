@@ -208,6 +208,19 @@ describe('loadConfig', () => {
     })).toThrow();
   });
 
+  it('rejects malformed mail transport hosts before runtime', () => {
+    expect(() => loadConfig({ ...baseEnv, MAIL_IMAP_HOST: 'https://imap.example.com' })).toThrow();
+    expect(() => loadConfig({ ...baseEnv, MAIL_SMTP_HOST: 'smtp.example.com:465' })).toThrow();
+    expect(() => loadConfig({
+      ...baseEnv,
+      MAIL_ACCOUNTS: 'campx',
+      MAIL_CAMPX_USERNAME: 'campx@example.com',
+      MAIL_CAMPX_APP_PASSWORD: 'secret',
+      MAIL_CAMPX_FROM_NAME: 'CAMPX',
+      MAIL_CAMPX_IMAP_HOST: '-bad.example.com'
+    })).toThrow();
+  });
+
   it('rejects invalid numeric ports and timeout values', () => {
     expect(() => loadConfig({ ...baseEnv, MAIL_IMAP_PORT: 'nope' })).toThrow();
     expect(() => loadConfig({ ...baseEnv, MAIL_SMTP_PORT: '70000' })).toThrow();
