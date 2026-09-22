@@ -1,0 +1,39 @@
+import { describe, expect, it } from 'vitest';
+import { AsyncSemaphore, mapWithConcurrency } from '../../src/concurrency.js';
+
+describe('bounded concurrency primitives', () => {
+  it('never exceeds the requested map concurrency', async () => {
+    let active = 0;
+    let highWater = 0;
+    const results = await mapWithConcurrency(
+      Array.from({ length: 12 }, (_, index) => index),
+      3,
+      async (value) => {
+        active += 1;
+        highWater = Math.max(highWater, active);
+        await new Promise((resolve) => setTimeout(resolve, 3));
+        active -= 1;
+        return value * 2;
+      }
+    );
+    expect(highWater).toBeLessThanOrEqual(3);
+    expect(results).toEqual(Array.from({ length: 12 }, (_, index) => index * 2));
+  });
+
+  it('serializes operations when semaphore limit is one', async () => {
+    const semaphore = new AsyncSemaphore(1);
+    const order: string[] = [];
+    await Promise.all([
+      semaphore.run(async () => {
+        order.push('a:start');
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        order.push('a:end');
+      }),
+      semaphore.run(async () => {
+        order.push('b:start');
+        order.push('b:end');
+      })
+    ]);
+    expect(order).toEqual(['a:start', 'a:end', 'b:start', 'b:end']);
+  });
+});
