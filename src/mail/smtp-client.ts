@@ -21,7 +21,7 @@ export function buildSmtpTransportOptions(config: MailRuntimeConfig) {
     host: config.smtp.host,
     port: config.smtp.port,
     secure: config.smtp.secure,
-    requireTLS: config.smtp.requireTLS,
+    ...(config.smtp.requireTLS ? { requireTLS: true } : {}),
     auth: { user: config.username, pass: config.appPassword },
     connectionTimeout: config.smtp.connectionTimeout,
     greetingTimeout: config.smtp.greetingTimeout,
