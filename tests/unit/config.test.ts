@@ -146,6 +146,17 @@ describe('loadConfig', () => {
     })).toThrow();
   });
 
+  it('caps search-source fetches at 512 KiB independently of the full-message cap', () => {
+    expect(loadConfig({
+      ...baseEnv,
+      MAIL_SEARCH_SOURCE_BYTES: String(512 * 1024)
+    }).searchSourceBytes).toBe(512 * 1024);
+    expect(() => loadConfig({
+      ...baseEnv,
+      MAIL_SEARCH_SOURCE_BYTES: String(512 * 1024 + 1)
+    })).toThrow();
+  });
+
   it('rejects a search source cap larger than the full-message cap', () => {
     expect(() => loadConfig({
       ...baseEnv,
