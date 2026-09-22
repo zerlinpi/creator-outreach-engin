@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod/v4';
-import { mapWithConcurrency } from '../concurrency.js';
+import { AsyncSemaphore, mapWithConcurrency } from '../concurrency.js';
 import type { MailAccountRegistry } from '../mail/accounts.js';
 import type { IdempotencyStore } from '../mail/idempotency.js';
 import { buildReplyMessage } from '../mail/reply.js';
@@ -25,6 +25,8 @@ function scopedKey(account: string, operation: string, key: string): string {
 export interface MailToolOptions {
   allAccountReadConcurrency?: number;
   multiAccountSendConcurrency?: number;
+  allAccountReadLimiter?: AsyncSemaphore;
+  multiAccountSendLimiter?: AsyncSemaphore;
 }
 
 export function registerMailTools(
@@ -35,6 +37,8 @@ export function registerMailTools(
 ) {
   const allAccountReadConcurrency = toolOptions.allAccountReadConcurrency ?? 4;
   const multiAccountSendConcurrency = toolOptions.multiAccountSendConcurrency ?? 3;
+  const allAccountReadLimiter = toolOptions.allAccountReadLimiter ?? new AsyncSemaphore(allAccountReadConcurrency);
+  const multiAccountSendLimiter = toolOptions.multiAccountSendLimiter ?? new AsyncSemaphore(multiAccountSendConcurrency);
   server.registerTool(
     'list_mailboxes',
     {
@@ -46,7 +50,8 @@ export function registerMailTools(
       try {
         if (account || accounts.size === 1) return result(await accounts.resolve(account).imap.listMailboxes());
 
-        const rows = await mapWithConcurrency(accounts.list(), allAccountReadConcurrency, async (runtime) => {
+        const rows = await mapWithConcurrency(accounts.list(), allAccountReadConcurrency, (runtime) =>
+          allAccountReadLimiter.run(async () => {
           try {
             return {
               account: runtime.id,
@@ -66,7 +71,7 @@ export function registerMailTools(
               error: toSafeError(error)
             };
           }
-        });
+        }));
         return result({ accountCount: rows.length, accountSelectionRequired: rows.length > 1, accounts: rows });
       } catch (e) { return failure(e); }
     }
@@ -108,7 +113,8 @@ export function registerMailTools(
 
         if (a.all_accounts) {
           const runtimes = accounts.list();
-          const searched = await mapWithConcurrency(runtimes, allAccountReadConcurrency, async (runtime) => {
+          const searched = await mapWithConcurrency(runtimes, allAccountReadConcurrency, (runtime) =>
+            allAccountReadLimiter.run(async () => {
             try {
               const messages = await runtime.imap.searchEmails(criteria);
               return {
@@ -125,7 +131,7 @@ export function registerMailTools(
                 error: toSafeError(error)
               };
             }
-          });
+          }));
 
           const globalLimit = a.limit ?? 20;
           const results = searched
@@ -340,7 +346,8 @@ export function registerMailTools(
         });
 
         const executeMulti = async () => {
-          const groupedResults = await mapWithConcurrency([...groups.entries()], multiAccountSendConcurrency, async ([accountIdValue, entries]) => {
+          const groupedResults = await mapWithConcurrency([...groups.entries()], multiAccountSendConcurrency, ([accountIdValue, entries]) =>
+            multiAccountSendLimiter.run(async () => {
             const runtime = accounts.resolve(accountIdValue);
             const groupOptions = { ...options, max: entries.length };
             if (dry_run) {
@@ -358,7 +365,7 @@ export function registerMailTools(
               account: runtime.id,
               accountAddress: runtime.address
             }));
-          });
+          }));
           return groupedResults.flat().sort((left, right) => left.index - right.index);
         };
 
