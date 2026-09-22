@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -47,6 +47,20 @@ async function startOAuthApp() {
   return { baseUrl: `http://127.0.0.1:${port}`, oauth };
 }
 
+function signedAccessToken(issuer: string, signingSecret: string, scope: string): string {
+  const now = Math.floor(Date.now() / 1000);
+  const body = Buffer.from(JSON.stringify({
+    typ: 'access',
+    cid: 'scope-test-client',
+    aud: issuer + '/mcp',
+    scope,
+    iat: now,
+    exp: now + 3600
+  }), 'utf8').toString('base64url');
+  const signature = createHmac('sha256', signingSecret).update(body).digest('base64url');
+  return 'oa.' + body + '.' + signature;
+}
+
 describe('OAuth authorization surface', () => {
   it('publishes discovery metadata and advertises the protected resource on 401', async () => {
     const { baseUrl, oauth } = await startOAuthApp();
@@ -79,6 +93,17 @@ describe('OAuth authorization surface', () => {
     expect(unauthorized.headers.get('www-authenticate')).toContain(
       `resource_metadata="${oauth.issuer}/.well-known/oauth-protected-resource"`
     );
+  });
+
+  it('rejects a valid access token that lacks the mcp:mail scope', async () => {
+    const { baseUrl, oauth } = await startOAuthApp();
+    const token = signedAccessToken(oauth.issuer, oauth.signingSecret, 'offline_access');
+    const response = await fetch(baseUrl + '/mcp', {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+      body: '{}'
+    });
+    expect(response.status).toBe(401);
   });
 
   it('completes DCR, PKCE authorization, token exchange, refresh, and MCP tool access', async () => {
