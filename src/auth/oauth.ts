@@ -265,10 +265,10 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
 
     return res.status(200).type('html').send(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Authorize CAMPX Mail</title></head>
+<title>Authorize Creator Outreach Mail</title></head>
 <body style="font-family:system-ui,sans-serif;max-width:560px;margin:48px auto;padding:0 20px">
-<h1>Authorize CAMPX Creator Mail</h1>
-<p><strong>${escapeHtml(client.name)}</strong> is requesting access to the CAMPX creator-outreach mailbox.</p>
+<h1>Authorize Creator Outreach Mail</h1>
+<p><strong>${escapeHtml(client.name)}</strong> is requesting access to the configured creator-outreach mailboxes.</p>
 <p>Requested scope: <code>${escapeHtml(scope)}</code></p>
 <form method="post" action="/oauth/authorize">
 <input type="hidden" name="request_id" value="${escapeHtml(requestId)}">
