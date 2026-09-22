@@ -4,11 +4,15 @@ import type { OAuthConfig } from './auth/oauth.js';
 const PortSchema = z.coerce.number().int().min(1).max(65535);
 const TimeoutSchema = z.coerce.number().int().min(1_000).max(120_000);
 const ByteSizeSchema = z.coerce.number().int().min(32 * 1024).max(25 * 1024 * 1024);
+const EmailSchema = z.string().email();
+const AccountIdSchema = z.string().regex(/^[a-z][a-z0-9_]{0,31}$/, 'Account ids must start with a letter and contain only lowercase letters, numbers, and underscores.');
 
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  MAIL_USERNAME: z.string().email(),
-  MAIL_APP_PASSWORD: z.string().min(1),
+  MAIL_USERNAME: EmailSchema.optional(),
+  MAIL_APP_PASSWORD: z.string().min(1).optional(),
+  MAIL_ACCOUNTS: z.string().optional(),
+  MAIL_DEFAULT_ACCOUNT: z.string().optional(),
   MAIL_IMAP_HOST: z.string().min(1).default('imap.qiye.aliyun.com'),
   MAIL_IMAP_PORT: PortSchema.default(993),
   MAIL_SMTP_HOST: z.string().min(1).default('smtp.qiye.aliyun.com'),
@@ -28,7 +32,7 @@ const EnvSchema = z.object({
   PORT: PortSchema.default(3000)
 });
 
-interface TransportConfig {
+export interface TransportConfig {
   host: string;
   port: number;
   secure: true;
@@ -37,19 +41,28 @@ interface TransportConfig {
   socketTimeout: number;
 }
 
-export interface AppConfig {
+export interface MailRuntimeConfig {
   username: string;
   appPassword: string;
   fromName: string;
+  maxMessageBytes: number;
+  searchSourceBytes: number;
+  imap: TransportConfig;
+  smtp: TransportConfig;
+}
+
+export interface MailAccountConfig extends MailRuntimeConfig {
+  id: string;
+}
+
+export interface AppConfig extends MailRuntimeConfig {
   authToken: string;
   allowedHosts?: string[];
   jsonLimit: string;
   port: number;
-  maxMessageBytes: number;
-  searchSourceBytes: number;
   oauth?: OAuthConfig;
-  imap: TransportConfig;
-  smtp: TransportConfig;
+  defaultAccount?: string;
+  accounts?: Record<string, MailAccountConfig>;
 }
 
 function isSafeHost(value: string): boolean {
@@ -63,6 +76,14 @@ function parseList(value?: string): string[] | undefined {
     throw new Error('CONNECTOR_ALLOWED_HOSTS must contain only hostnames or IPv4 addresses without schemes, ports, paths, or wildcards.');
   }
   return values.length ? values : undefined;
+}
+
+function parseAccountIds(value?: string): string[] {
+  if (!value?.trim()) return [];
+  const raw = value.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
+  const unique = [...new Set(raw)];
+  if (unique.length !== raw.length) throw new Error('MAIL_ACCOUNTS must not contain duplicate account ids.');
+  return unique.map((id) => AccountIdSchema.parse(id));
 }
 
 function validateJsonLimit(value: string): string {
@@ -109,6 +130,72 @@ function parseOAuthConfig(
   };
 }
 
+function buildAccount(
+  id: string,
+  username: string,
+  appPassword: string,
+  fromName: string,
+  parsed: z.infer<typeof EnvSchema>,
+  env: NodeJS.ProcessEnv
+): MailAccountConfig {
+  const prefix = 'MAIL_' + id.toUpperCase() + '_';
+  const imapHost = env[prefix + 'IMAP_HOST']?.trim() || parsed.MAIL_IMAP_HOST;
+  const smtpHost = env[prefix + 'SMTP_HOST']?.trim() || parsed.MAIL_SMTP_HOST;
+  const imapPort = PortSchema.parse(env[prefix + 'IMAP_PORT'] ?? parsed.MAIL_IMAP_PORT);
+  const smtpPort = PortSchema.parse(env[prefix + 'SMTP_PORT'] ?? parsed.MAIL_SMTP_PORT);
+  const timeouts = {
+    connectionTimeout: parsed.MAIL_CONNECTION_TIMEOUT_MS,
+    greetingTimeout: parsed.MAIL_GREETING_TIMEOUT_MS,
+    socketTimeout: parsed.MAIL_SOCKET_TIMEOUT_MS
+  };
+
+  return {
+    id,
+    username,
+    appPassword,
+    fromName,
+    maxMessageBytes: parsed.MAIL_MAX_MESSAGE_BYTES,
+    searchSourceBytes: parsed.MAIL_SEARCH_SOURCE_BYTES,
+    imap: { host: imapHost, port: imapPort, secure: true, ...timeouts },
+    smtp: { host: smtpHost, port: smtpPort, secure: true, ...timeouts }
+  };
+}
+
+function parseAccounts(parsed: z.infer<typeof EnvSchema>, env: NodeJS.ProcessEnv): {
+  defaultAccount: string;
+  accounts: Record<string, MailAccountConfig>;
+} {
+  const ids = parseAccountIds(parsed.MAIL_ACCOUNTS);
+
+  if (!ids.length) {
+    if (!parsed.MAIL_USERNAME || !parsed.MAIL_APP_PASSWORD) {
+      throw new Error('Configure MAIL_USERNAME and MAIL_APP_PASSWORD, or use MAIL_ACCOUNTS with per-account credentials.');
+    }
+    const id = AccountIdSchema.parse((parsed.MAIL_DEFAULT_ACCOUNT ?? 'default').trim().toLowerCase());
+    return {
+      defaultAccount: id,
+      accounts: {
+        [id]: buildAccount(id, parsed.MAIL_USERNAME, parsed.MAIL_APP_PASSWORD, parsed.MAIL_FROM_NAME, parsed, env)
+      }
+    };
+  }
+
+  const accounts: Record<string, MailAccountConfig> = {};
+  for (const id of ids) {
+    const prefix = 'MAIL_' + id.toUpperCase() + '_';
+    const username = EmailSchema.parse(env[prefix + 'USERNAME']);
+    const appPassword = z.string().min(1).parse(env[prefix + 'APP_PASSWORD']);
+    const fromName = z.string().min(1).parse(env[prefix + 'FROM_NAME']);
+    accounts[id] = buildAccount(id, username, appPassword, fromName, parsed, env);
+  }
+
+  const defaultAccount = AccountIdSchema.parse((parsed.MAIL_DEFAULT_ACCOUNT ?? ids[0]).trim().toLowerCase());
+  if (!accounts[defaultAccount]) {
+    throw new Error('MAIL_DEFAULT_ACCOUNT must name one of the configured MAIL_ACCOUNTS.');
+  }
+  return { defaultAccount, accounts };
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const parsed = EnvSchema.parse(env);
   const allowedHosts = parseList(parsed.CONNECTOR_ALLOWED_HOSTS);
@@ -122,34 +209,23 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new Error('MAIL_SEARCH_SOURCE_BYTES must not exceed MAIL_MAX_MESSAGE_BYTES.');
   }
 
-  const timeouts = {
-    connectionTimeout: parsed.MAIL_CONNECTION_TIMEOUT_MS,
-    greetingTimeout: parsed.MAIL_GREETING_TIMEOUT_MS,
-    socketTimeout: parsed.MAIL_SOCKET_TIMEOUT_MS
-  };
+  const { defaultAccount, accounts } = parseAccounts(parsed, env);
+  const defaultConfig = accounts[defaultAccount];
 
   return {
-    username: parsed.MAIL_USERNAME,
-    appPassword: parsed.MAIL_APP_PASSWORD,
-    fromName: parsed.MAIL_FROM_NAME,
+    username: defaultConfig.username,
+    appPassword: defaultConfig.appPassword,
+    fromName: defaultConfig.fromName,
     authToken: parsed.CONNECTOR_AUTH_TOKEN,
     allowedHosts,
     jsonLimit,
     port: parsed.PORT,
-    maxMessageBytes: parsed.MAIL_MAX_MESSAGE_BYTES,
-    searchSourceBytes: parsed.MAIL_SEARCH_SOURCE_BYTES,
+    maxMessageBytes: defaultConfig.maxMessageBytes,
+    searchSourceBytes: defaultConfig.searchSourceBytes,
     oauth,
-    imap: {
-      host: parsed.MAIL_IMAP_HOST,
-      port: parsed.MAIL_IMAP_PORT,
-      secure: true,
-      ...timeouts
-    },
-    smtp: {
-      host: parsed.MAIL_SMTP_HOST,
-      port: parsed.MAIL_SMTP_PORT,
-      secure: true,
-      ...timeouts
-    }
+    imap: defaultConfig.imap,
+    smtp: defaultConfig.smtp,
+    defaultAccount,
+    accounts
   };
 }
