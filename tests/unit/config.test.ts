@@ -48,6 +48,17 @@ describe('loadConfig', () => {
     })).toThrow();
   });
 
+  it('rejects unsafe sender display names', () => {
+    expect(() => loadConfig({ ...baseEnv, MAIL_FROM_NAME: 'Bad\r\nBcc: attacker@example.com' })).toThrow();
+    expect(() => loadConfig({
+      ...baseEnv,
+      MAIL_ACCOUNTS: 'campx',
+      MAIL_CAMPX_USERNAME: 'campx@example.com',
+      MAIL_CAMPX_APP_PASSWORD: 'secret',
+      MAIL_CAMPX_FROM_NAME: 'Bad\nName'
+    })).toThrow();
+  });
+
   it('uses secure Alibaba Mail and bounded resource defaults', () => {
     const config = loadConfig(baseEnv);
     expect(config.imap).toMatchObject({
