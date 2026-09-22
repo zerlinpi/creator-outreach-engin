@@ -6,7 +6,7 @@ The connector now supports multiple isolated sender mailboxes behind one MCP end
 
 ## Mailbox Manager UI (recommended)
 
-Version **0.2.0** adds a browser mailbox manager so the server does not need one environment-variable block per mailbox.
+Version **0.3.0** hardens the browser mailbox manager so the server does not need one environment-variable block per mailbox.
 
 Configure only the admin/encryption secrets:
 
@@ -19,7 +19,7 @@ MAIL_MAX_ACCOUNTS=50
 
 Then open `https://your-domain/admin` and sign in with username `admin` plus `MAIL_ADMIN_PASSWORD`.
 
-The UI can add, edit, test, delete, and choose the default mailbox. UI-managed mailbox passwords are encrypted at rest with AES-256-GCM. Passwords are never returned by the admin API or exposed through MCP tools.
+The UI can add, edit, test, and delete mailboxes. In multi-mailbox mode there is deliberately no implicit AI sender selection. UI-managed mailbox passwords are encrypted at rest with AES-256-GCM. Passwords are never returned by the admin API or exposed through MCP tools.
 
 For Docker deployments, persist `/app/data` as a volume so UI-added mailboxes survive container replacement.
 
@@ -86,7 +86,7 @@ The legacy account id is `default` unless `MAIL_DEFAULT_ACCOUNT` is supplied.
 
 Multi-mailbox routing is intentionally fail-closed:
 
-- New message references contain an account id in addition to mailbox, UID, and UIDVALIDITY.
+- New message references are HMAC-signed and bind account + mailbox + UIDVALIDITY + UID. Tampered refs are rejected.
 - `get_email`, `get_thread`, and `reply_email` infer the owning account from the message reference.
 - If a caller explicitly supplies a different account for an account-scoped message reference, the connector returns `ACCOUNT_MISMATCH`.
 - Outbound SMTP `From` identity comes from the selected account only.
@@ -107,7 +107,7 @@ For `search_emails`, `send_email`, and `send_email_batch`:
 }
 ```
 
-is optional. When omitted, `MAIL_DEFAULT_ACCOUNT` is used.
+is required whenever more than one mailbox is configured. With multiple mailboxes, omitting `account` returns `ACCOUNT_REQUIRED` instead of guessing a sender.
 
 For `get_email`, `get_thread`, and `reply_email`, new message references select the account automatically. Supplying `account` is optional and acts as an additional safety check.
 
@@ -117,7 +117,7 @@ For `get_email`, `get_thread`, and `reply_email`, new message references select 
 
 Write tools use idempotency keys so retried MCP requests do not silently duplicate a send. Reusing the same key with a different payload in the same account is rejected as `IDEMPOTENCY_CONFLICT`.
 
-Completed results are cached for 15 minutes by default and the in-memory cache is bounded. The idempotency store is still process-local, so production v1 should run as a single Node process / single replica until a shared Redis or database-backed store is added.
+Completed results are cached for 15 minutes by default and the in-memory cache is bounded. The idempotency store is still process-local, so production should run as a single Node process / single replica until a shared Redis or database-backed store is added.
 
 ## Batch sending safeguards
 
@@ -125,7 +125,7 @@ Batch default is 10 messages and the hard maximum is 25 per invocation. Delivery
 
 `send_email_batch` supports:
 
-- `account` — sender account; defaults to the configured default.
+- `account` — sender account; required in multi-mailbox single-sender mode.
 - `dry_run` — validate and preview without sending or consuming an idempotency key.
 - `idempotency_key` — required for a real send.
 - `delay_ms` — 0–5000 ms between messages; default 250.
@@ -155,8 +155,11 @@ Resource defaults:
 - `MAIL_SOCKET_TIMEOUT_MS=30000`
 - `MAIL_MAX_MESSAGE_BYTES=10485760`
 - `MAIL_SEARCH_SOURCE_BYTES=131072`
+- `MAIL_IMAP_ACCOUNT_CONCURRENCY=2`
+- `MAIL_ALL_ACCOUNT_READ_CONCURRENCY=4`
+- `MAIL_MULTI_ACCOUNT_SEND_CONCURRENCY=3`
 
-`MAIL_SEARCH_SOURCE_BYTES` must not exceed `MAIL_MAX_MESSAGE_BYTES`.
+`MAIL_SEARCH_SOURCE_BYTES` must not exceed `MAIL_MAX_MESSAGE_BYTES`. Cross-account reads and sends are bounded; each account also serializes SMTP sends. Set `MAIL_SMTP_SECURITY=starttls` for providers such as Microsoft 365 that use port 587.
 
 ### Keep SMTP mail in Sent
 
@@ -170,6 +173,8 @@ Required connector secret:
 
 ```env
 CONNECTOR_AUTH_TOKEN=<at-least-32-characters>
+# Recommended if CONNECTOR_AUTH_TOKEN may rotate:
+MAIL_MESSAGE_REF_SIGNING_KEY=<independent-random-secret-at-least-32-characters>
 ```
 
 Production also requires `CONNECTOR_ALLOWED_HOSTS`.
@@ -183,7 +188,7 @@ CONNECTOR_ALLOWED_HOSTS=domail.campxusainc.com,127.0.0.1
 
 Do not include schemes, ports, paths, or wildcards. `CONNECTOR_JSON_LIMIT` defaults to `1mb` and is restricted to 32 KiB–2 MiB.
 
-`GET /health` reports process health only and never mailbox credentials or message data.
+`GET /health` reports process liveness only. `GET /ready` returns 200 only when at least one mailbox is configured; neither endpoint exposes mailbox credentials or message data.
 
 ## ChatGPT OAuth
 
@@ -204,7 +209,7 @@ The connector exposes:
 - `/oauth/authorize`
 - `/oauth/token`
 
-It uses Authorization Code + PKCE S256, dynamic public-client registration, one-time authorization codes, one-hour access tokens, 30-day refresh tokens, and `offline_access`.
+It uses Authorization Code + PKCE S256, dynamic public-client registration, one-time authorization codes, one-hour access tokens, rotating 30-day refresh tokens with replay rejection, failure rate limits, and `offline_access`. MCP access requires the `mcp:mail` scope.
 
 The static `CONNECTOR_AUTH_TOKEN` remains valid as an operator/compatibility credential.
 
@@ -230,7 +235,8 @@ npm start
 
 Endpoints:
 
-- Health: `GET /health`
+- Liveness: `GET /health`
+- Readiness: `GET /ready`
 - MCP: `/mcp`
 
 ## Mail doctor
