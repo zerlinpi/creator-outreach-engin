@@ -32,7 +32,35 @@ jobs:
         run: |
           test -f dist/src/server.js
           test -f dist/src/admin.js
+          test -f dist/src/doctor.js
           test ! -d dist/tests
+      - name: Smoke-test compiled production server
+        run: |
+          export NODE_ENV=production
+          export CONNECTOR_AUTH_TOKEN=1234567890abcdef1234567890abcdef
+          export CONNECTOR_ALLOWED_HOSTS=127.0.0.1
+          export MAIL_USERNAME=smoke@example.com
+          export MAIL_APP_PASSWORD=smoke-password
+          export MAIL_FROM_NAME=Smoke
+          export MAIL_ADMIN_PASSWORD=admin-password-1234
+          export MAIL_ACCOUNT_STORE_KEY=0123456789abcdef0123456789abcdef
+          export MAIL_ACCOUNT_STORE_PATH="${RUNNER_TEMP}/mail-accounts.json"
+          export PORT=3100
+          node dist/src/server.js >"${RUNNER_TEMP}/server.log" 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "${SERVER_PID}" 2>/dev/null || true' EXIT
+          for attempt in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:3100/health >/dev/null; then break; fi
+            sleep 0.25
+          done
+          curl --fail --silent http://127.0.0.1:3100/health | grep '"ok":true'
+          curl --fail --silent http://127.0.0.1:3100/ready | grep '"ok":true'
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:3100/favicon.ico)" = "204"
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:3100/admin)" = "401"
+          curl --fail --silent --user admin:admin-password-1234 http://127.0.0.1:3100/admin | grep 'data-action="test"'
+          kill "${SERVER_PID}"
+          wait "${SERVER_PID}" || true
+          trap - EXIT
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=moderate
       - name: Audit all dependencies
