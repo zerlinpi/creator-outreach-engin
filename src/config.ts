@@ -13,6 +13,10 @@ const ImapConcurrencySchema = z.coerce.number().int().min(1).max(8);
 const ReadConcurrencySchema = z.coerce.number().int().min(1).max(16);
 const SendConcurrencySchema = z.coerce.number().int().min(1).max(10);
 const SmtpSecuritySchema = z.enum(['tls', 'starttls']);
+const SenderNameSchema = z.string().trim().min(1).max(120).refine(
+  (value) => !/[\r\n]/.test(value),
+  'Sender name must not contain CR or LF characters.'
+);
 
 function blankToUndefined(value: unknown): unknown {
   return typeof value === 'string' && value.trim() === '' ? undefined : value;
@@ -30,7 +34,7 @@ const EnvSchema = z.object({
   MAIL_SMTP_HOST: z.string().trim().refine(isHostnameOrIpv4, 'Invalid SMTP hostname or IPv4 address.').default('smtp.qiye.aliyun.com'),
   MAIL_SMTP_PORT: PortSchema.default(465),
   MAIL_SMTP_SECURITY: SmtpSecuritySchema.default('tls'),
-  MAIL_FROM_NAME: z.string().min(1).default('CAMPX'),
+  MAIL_FROM_NAME: SenderNameSchema.default('CAMPX'),
   MAIL_CONNECTION_TIMEOUT_MS: TimeoutSchema.default(15_000),
   MAIL_GREETING_TIMEOUT_MS: TimeoutSchema.default(10_000),
   MAIL_SOCKET_TIMEOUT_MS: TimeoutSchema.default(30_000),
@@ -245,7 +249,7 @@ function parseAccounts(
       id,
       EmailSchema.parse(env[prefix + 'USERNAME']),
       z.string().min(1).parse(env[prefix + 'APP_PASSWORD']),
-      z.string().min(1).parse(env[prefix + 'FROM_NAME']),
+      SenderNameSchema.parse(env[prefix + 'FROM_NAME']),
       parsed,
       env,
       messageRefSecret
