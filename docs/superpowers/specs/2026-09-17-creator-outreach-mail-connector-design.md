@@ -1,5 +1,7 @@
 # Creator Outreach Mail Connector — Design
 
+> Historical note: this is the original v0.1 single-mailbox design. Multi-mailbox routing and the Mailbox Manager implemented later supersede its single-CAMPX and “multi-mailbox out of scope” assumptions. See `docs/MAILBOX_MANAGER.md` and `docs/MULTI_MAILBOX.md` for current behavior.
+
 Date: 2026-09-17
 Repository: `zerlinpi/creator-outreach-engin`
 Status: Proposed for implementation
