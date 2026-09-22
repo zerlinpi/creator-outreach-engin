@@ -33,8 +33,11 @@ export function registerMailTools(
     },
     async ({ account }) => {
       try {
-        const selected = account ? [accounts.resolve(account)] : accounts.list();
-        const rows = await Promise.all(selected.map(async (runtime) => {
+        if (account || accounts.size === 1) {
+          return result(await accounts.resolve(account).imap.listMailboxes());
+        }
+
+        const rows = await Promise.all(accounts.list().map(async (runtime) => {
           try {
             return {
               account: runtime.id,
@@ -263,7 +266,7 @@ export function registerMailTools(
           retryDelayMs: retry_delay_ms
         };
         if (dry_run) {
-          return result({ account: runtime.id, dryRun: true, results: preflightBatch(messages, options) });
+          return result(preflightBatch(messages, options));
         }
 
         const payload = { account: runtime.id, messages, options };
@@ -272,7 +275,7 @@ export function registerMailTools(
           payload,
           () => executeBatch(messages, (m) => runtime.smtp.send(m), options)
         );
-        return result({ account: runtime.id, dryRun: false, results: batchResults });
+        return result(batchResults);
       } catch (e) { return failure(e); }
     }
   );
