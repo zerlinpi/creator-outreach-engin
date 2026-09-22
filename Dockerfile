@@ -12,6 +12,7 @@ ENV NODE_ENV=production
 COPY package*.json .npmrc ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
+COPY scripts ./scripts
 RUN mkdir -p /app/data && chown node:node /app/data
 USER node
 EXPOSE 3000
