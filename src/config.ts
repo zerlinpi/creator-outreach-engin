@@ -87,7 +87,7 @@ export interface MailAdminConfig {
 
 export interface AppConfig extends MailRuntimeConfig {
   authToken: string;
-  bindHost: '0.0.0.0' | '127.0.0.1' | '::' | '::1';
+  bindHost?: '0.0.0.0' | '127.0.0.1' | '::' | '::1';
   allowedHosts?: string[];
   jsonLimit: string;
   port: number;
