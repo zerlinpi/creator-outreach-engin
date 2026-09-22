@@ -144,6 +144,38 @@ describe('Mailbox Manager admin UI', () => {
     expect(browserListeners.get('provider')?.has('change')).toBe(true);
     expect(browserListeners.get('form')?.has('submit')).toBe(true);
 
+    const unsafeSender = await fetch(root + '/admin/api/accounts', {
+      method: 'POST',
+      headers: { authorization: auth, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        id: 'badname',
+        username: 'badname@example.com',
+        appPassword: 'mailbox-secret',
+        fromName: 'Bad\r\nBcc: attacker@example.com',
+        imapHost: 'imap.example.com',
+        imapPort: 993,
+        smtpHost: 'smtp.example.com',
+        smtpPort: 465
+      })
+    });
+    expect(unsafeSender.status).toBe(400);
+
+    const oversizedPassword = await fetch(root + '/admin/api/accounts', {
+      method: 'POST',
+      headers: { authorization: auth, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        id: 'hugepass',
+        username: 'hugepass@example.com',
+        appPassword: 'x'.repeat(4097),
+        fromName: 'Huge Pass',
+        imapHost: 'imap.example.com',
+        imapPort: 993,
+        smtpHost: 'smtp.example.com',
+        smtpPort: 465
+      })
+    });
+    expect(oversizedPassword.status).toBe(400);
+
     const created = await fetch(root + '/admin/api/accounts', {
       method: 'POST',
       headers: { authorization: auth, 'content-type': 'application/json' },
