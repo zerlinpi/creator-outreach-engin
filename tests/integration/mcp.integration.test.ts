@@ -161,19 +161,10 @@ describe('remote MCP HTTP surface', () => {
         'send_email',
         'send_email_batch'
       ]);
-      expect(jsonText(await client.callTool({ name: 'list_mailboxes', arguments: {} }))).toEqual({
-        defaultAccount: 'default',
-        accounts: [{
-          account: 'default',
-          address: 'campx@example.com',
-          fromName: 'Default',
-          ok: true,
-          mailboxes: [
-            { path: 'INBOX', specialUse: '\\Inbox' },
-            { path: 'Sent Messages', specialUse: '\\Sent' }
-          ]
-        }]
-      });
+      expect(jsonText(await client.callTool({ name: 'list_mailboxes', arguments: {} }))).toEqual([
+        { path: 'INBOX', specialUse: '\\Inbox' },
+        { path: 'Sent Messages', specialUse: '\\Sent' }
+      ]);
     } finally {
       await transport.terminateSession().catch(() => undefined);
       await client.close();
@@ -256,9 +247,8 @@ describe('remote MCP HTTP surface', () => {
           ]
         }
       }));
-      expect(batch.account).toBe('default');
-      expect(batch.results).toHaveLength(2);
-      expect(batch.results.every((entry: { ok: boolean }) => entry.ok)).toBe(true);
+      expect(batch).toHaveLength(2);
+      expect(batch.every((entry: { ok: boolean }) => entry.ok)).toBe(true);
       expect((sent as OutgoingMessage[]).slice(3).map((message) => message.to)).toEqual([['a@example.com'], ['b@example.com']]);
     } finally {
       await transport.terminateSession().catch(() => undefined);
