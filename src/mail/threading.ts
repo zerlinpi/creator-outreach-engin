@@ -1,15 +1,21 @@
 import type { NormalizedMessage, ThreadResult } from './types.js';
 
 export function normalizeSubject(subject: string): string {
-  let value = subject.trim();
+  let value = subject.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
   while (/^(re|fw|fwd)\s*:/i.test(value)) value = value.replace(/^(re|fw|fwd)\s*:\s*/i, '').trim();
   return value;
 }
 
+function safeThreadId(value: string | null | undefined): string | undefined {
+  if (!value || value.length > 998 || /[\r\n]/.test(value)) return undefined;
+  return value.trim() || undefined;
+}
+
 export function buildReplyHeaders(parent: Pick<NormalizedMessage, 'messageId' | 'references'>): { inReplyTo?: string; references: string[] } {
-  const references = [...parent.references];
-  if (parent.messageId && !references.includes(parent.messageId)) references.push(parent.messageId);
-  return { inReplyTo: parent.messageId ?? undefined, references: [...new Set(references)] };
+  const references = parent.references.map(safeThreadId).filter((value): value is string => Boolean(value));
+  const messageId = safeThreadId(parent.messageId);
+  if (messageId && !references.includes(messageId)) references.push(messageId);
+  return { inReplyTo: messageId, references: [...new Set(references)] };
 }
 
 function participants(message: NormalizedMessage): Set<string> {
