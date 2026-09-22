@@ -95,11 +95,30 @@ export class MailAccountRegistry {
 
   resolveForMessage(messageRef: string, requestedAccount?: string): MailAccountRuntime {
     if (this.messageRefSecret) {
-      const encodedAccount = decodeMessageRef(messageRef, this.messageRefSecret).account;
-      if (encodedAccount && requestedAccount && encodedAccount !== requestedAccount.trim().toLowerCase()) {
-        throw new ConnectorError('ACCOUNT_MISMATCH', 'The message reference belongs to a different mail account.');
+      try {
+        const encodedAccount = decodeMessageRef(messageRef, this.messageRefSecret).account;
+        if (encodedAccount && requestedAccount && encodedAccount !== requestedAccount.trim().toLowerCase()) {
+          throw new ConnectorError('ACCOUNT_MISMATCH', 'The message reference belongs to a different mail account.');
+        }
+        return this.resolve(encodedAccount ?? requestedAccount);
+      } catch (error) {
+        if (error instanceof ConnectorError && error.code === 'ACCOUNT_MISMATCH') throw error;
+        if (!messageRef.startsWith('mr1.')) {
+          if (!requestedAccount && this.accounts.size > 1) {
+            throw new ConnectorError(
+              'ACCOUNT_REQUIRED',
+              'This legacy message reference is unsigned. Specify its account explicitly before reading or replying.'
+            );
+          }
+          const legacy = decodeMessageRef(messageRef, undefined);
+          const runtime = this.resolve(requestedAccount);
+          if (legacy.account && legacy.account !== runtime.id) {
+            throw new ConnectorError('ACCOUNT_MISMATCH', 'The legacy message reference belongs to a different mail account.');
+          }
+          return runtime;
+        }
+        throw error;
       }
-      return this.resolve(encodedAccount ?? requestedAccount);
     }
 
     let encodedAccount: string | undefined;
