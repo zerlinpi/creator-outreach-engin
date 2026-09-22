@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { z } from 'zod';
 import type { OAuthConfig } from './auth/oauth.js';
 
@@ -6,6 +7,10 @@ const TimeoutSchema = z.coerce.number().int().min(1_000).max(120_000);
 const ByteSizeSchema = z.coerce.number().int().min(32 * 1024).max(25 * 1024 * 1024);
 const EmailSchema = z.string().email();
 const AccountIdSchema = z.string().regex(/^[a-z][a-z0-9_]{0,31}$/, 'Account ids must start with a letter and contain only lowercase letters, numbers, and underscores.');
+const ImapConcurrencySchema = z.coerce.number().int().min(1).max(8);
+const ReadConcurrencySchema = z.coerce.number().int().min(1).max(16);
+const SendConcurrencySchema = z.coerce.number().int().min(1).max(10);
+const SmtpSecuritySchema = z.enum(['tls', 'starttls']);
 
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -15,14 +20,18 @@ const EnvSchema = z.object({
   MAIL_DEFAULT_ACCOUNT: z.string().optional(),
   MAIL_IMAP_HOST: z.string().min(1).default('imap.qiye.aliyun.com'),
   MAIL_IMAP_PORT: PortSchema.default(993),
+  MAIL_IMAP_ACCOUNT_CONCURRENCY: ImapConcurrencySchema.default(2),
   MAIL_SMTP_HOST: z.string().min(1).default('smtp.qiye.aliyun.com'),
   MAIL_SMTP_PORT: PortSchema.default(465),
+  MAIL_SMTP_SECURITY: SmtpSecuritySchema.default('tls'),
   MAIL_FROM_NAME: z.string().min(1).default('CAMPX'),
   MAIL_CONNECTION_TIMEOUT_MS: TimeoutSchema.default(15_000),
   MAIL_GREETING_TIMEOUT_MS: TimeoutSchema.default(10_000),
   MAIL_SOCKET_TIMEOUT_MS: TimeoutSchema.default(30_000),
   MAIL_MAX_MESSAGE_BYTES: ByteSizeSchema.default(10 * 1024 * 1024),
   MAIL_SEARCH_SOURCE_BYTES: ByteSizeSchema.default(128 * 1024),
+  MAIL_ALL_ACCOUNT_READ_CONCURRENCY: ReadConcurrencySchema.default(4),
+  MAIL_MULTI_ACCOUNT_SEND_CONCURRENCY: SendConcurrencySchema.default(3),
   MAIL_ADMIN_PASSWORD: z.string().min(16).optional(),
   MAIL_ACCOUNT_STORE_KEY: z.string().min(32).optional(),
   MAIL_ACCOUNT_STORE_PATH: z.string().min(1).default('./data/mail-accounts.enc.json'),
@@ -39,10 +48,12 @@ const EnvSchema = z.object({
 export interface TransportConfig {
   host: string;
   port: number;
-  secure: true;
+  secure: boolean;
+  requireTLS?: boolean;
   connectionTimeout: number;
   greetingTimeout: number;
   socketTimeout: number;
+  maxConcurrency: number;
 }
 
 export interface MailRuntimeConfig {
@@ -51,6 +62,7 @@ export interface MailRuntimeConfig {
   fromName: string;
   maxMessageBytes: number;
   searchSourceBytes: number;
+  messageRefSecret?: string;
   imap: TransportConfig;
   smtp: TransportConfig;
 }
@@ -75,6 +87,8 @@ export interface AppConfig extends MailRuntimeConfig {
   mailAdmin?: MailAdminConfig;
   defaultAccount?: string;
   accounts?: Record<string, MailAccountConfig>;
+  allAccountReadConcurrency: number;
+  multiAccountSendConcurrency: number;
 }
 
 function isSafeHost(value: string): boolean {
@@ -139,6 +153,10 @@ function parseAdminConfig(parsed: z.infer<typeof EnvSchema>): MailAdminConfig | 
   };
 }
 
+function smtpSecurity(value: string): Pick<TransportConfig, 'secure' | 'requireTLS'> {
+  return value === 'starttls' ? { secure: false, requireTLS: true } : { secure: true };
+}
+
 function sharedTransport(parsed: z.infer<typeof EnvSchema>) {
   const timeouts = {
     connectionTimeout: parsed.MAIL_CONNECTION_TIMEOUT_MS,
@@ -146,14 +164,35 @@ function sharedTransport(parsed: z.infer<typeof EnvSchema>) {
     socketTimeout: parsed.MAIL_SOCKET_TIMEOUT_MS
   };
   return {
-    imap: { host: parsed.MAIL_IMAP_HOST, port: parsed.MAIL_IMAP_PORT, secure: true as const, ...timeouts },
-    smtp: { host: parsed.MAIL_SMTP_HOST, port: parsed.MAIL_SMTP_PORT, secure: true as const, ...timeouts }
+    imap: {
+      host: parsed.MAIL_IMAP_HOST,
+      port: parsed.MAIL_IMAP_PORT,
+      secure: true,
+      ...timeouts,
+      maxConcurrency: parsed.MAIL_IMAP_ACCOUNT_CONCURRENCY
+    },
+    smtp: {
+      host: parsed.MAIL_SMTP_HOST,
+      port: parsed.MAIL_SMTP_PORT,
+      ...smtpSecurity(parsed.MAIL_SMTP_SECURITY),
+      ...timeouts,
+      maxConcurrency: 1
+    }
   };
 }
 
-function buildAccount(id: string, username: string, appPassword: string, fromName: string, parsed: z.infer<typeof EnvSchema>, env: NodeJS.ProcessEnv): MailAccountConfig {
+function buildAccount(
+  id: string,
+  username: string,
+  appPassword: string,
+  fromName: string,
+  parsed: z.infer<typeof EnvSchema>,
+  env: NodeJS.ProcessEnv,
+  messageRefSecret: string
+): MailAccountConfig {
   const prefix = 'MAIL_' + id.toUpperCase() + '_';
   const base = sharedTransport(parsed);
+  const security = SmtpSecuritySchema.parse(env[prefix + 'SMTP_SECURITY'] ?? parsed.MAIL_SMTP_SECURITY);
   return {
     id,
     username,
@@ -161,6 +200,7 @@ function buildAccount(id: string, username: string, appPassword: string, fromNam
     fromName,
     maxMessageBytes: parsed.MAIL_MAX_MESSAGE_BYTES,
     searchSourceBytes: parsed.MAIL_SEARCH_SOURCE_BYTES,
+    messageRefSecret,
     imap: {
       ...base.imap,
       host: env[prefix + 'IMAP_HOST']?.trim() || base.imap.host,
@@ -168,13 +208,18 @@ function buildAccount(id: string, username: string, appPassword: string, fromNam
     },
     smtp: {
       ...base.smtp,
+      ...smtpSecurity(security),
       host: env[prefix + 'SMTP_HOST']?.trim() || base.smtp.host,
       port: PortSchema.parse(env[prefix + 'SMTP_PORT'] ?? base.smtp.port)
     }
   };
 }
 
-function parseAccounts(parsed: z.infer<typeof EnvSchema>, env: NodeJS.ProcessEnv): {
+function parseAccounts(
+  parsed: z.infer<typeof EnvSchema>,
+  env: NodeJS.ProcessEnv,
+  messageRefSecret: string
+): {
   defaultAccount?: string;
   accounts: Record<string, MailAccountConfig>;
 } {
@@ -184,7 +229,7 @@ function parseAccounts(parsed: z.infer<typeof EnvSchema>, env: NodeJS.ProcessEnv
     const id = AccountIdSchema.parse((parsed.MAIL_DEFAULT_ACCOUNT ?? 'default').trim().toLowerCase());
     return {
       defaultAccount: id,
-      accounts: { [id]: buildAccount(id, parsed.MAIL_USERNAME, parsed.MAIL_APP_PASSWORD, parsed.MAIL_FROM_NAME, parsed, env) }
+      accounts: { [id]: buildAccount(id, parsed.MAIL_USERNAME, parsed.MAIL_APP_PASSWORD, parsed.MAIL_FROM_NAME, parsed, env, messageRefSecret) }
     };
   }
 
@@ -197,7 +242,8 @@ function parseAccounts(parsed: z.infer<typeof EnvSchema>, env: NodeJS.ProcessEnv
       z.string().min(1).parse(env[prefix + 'APP_PASSWORD']),
       z.string().min(1).parse(env[prefix + 'FROM_NAME']),
       parsed,
-      env
+      env,
+      messageRefSecret
     );
   }
 
@@ -212,11 +258,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const jsonLimit = validateJsonLimit(parsed.CONNECTOR_JSON_LIMIT);
   const oauth = parseOAuthConfig(parsed, allowedHosts);
   const mailAdmin = parseAdminConfig(parsed);
+  const messageRefSecret = createHmac('sha256', parsed.CONNECTOR_AUTH_TOKEN)
+    .update('creator-outreach-message-ref-v1')
+    .digest('hex');
 
   if (parsed.NODE_ENV === 'production' && !allowedHosts?.length) throw new Error('CONNECTOR_ALLOWED_HOSTS is required in production.');
   if (parsed.MAIL_SEARCH_SOURCE_BYTES > parsed.MAIL_MAX_MESSAGE_BYTES) throw new Error('MAIL_SEARCH_SOURCE_BYTES must not exceed MAIL_MAX_MESSAGE_BYTES.');
 
-  const { defaultAccount, accounts } = parseAccounts(parsed, env);
+  const { defaultAccount, accounts } = parseAccounts(parsed, env, messageRefSecret);
   if (!Object.keys(accounts).length && !mailAdmin) {
     throw new Error('Configure at least one mailbox or enable the Mailbox Manager with MAIL_ADMIN_PASSWORD and MAIL_ACCOUNT_STORE_KEY.');
   }
@@ -233,11 +282,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     port: parsed.PORT,
     maxMessageBytes: parsed.MAIL_MAX_MESSAGE_BYTES,
     searchSourceBytes: parsed.MAIL_SEARCH_SOURCE_BYTES,
+    messageRefSecret,
     oauth,
     mailAdmin,
     imap: defaultConfig?.imap ?? base.imap,
     smtp: defaultConfig?.smtp ?? base.smtp,
     defaultAccount,
-    accounts
+    accounts,
+    allAccountReadConcurrency: parsed.MAIL_ALL_ACCOUNT_READ_CONCURRENCY,
+    multiAccountSendConcurrency: parsed.MAIL_MULTI_ACCOUNT_SEND_CONCURRENCY
   };
 }
