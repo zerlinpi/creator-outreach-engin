@@ -43,6 +43,19 @@ describe('SMTP adapter', () => {
     });
   });
 
+  it('builds STARTTLS transport options when configured', () => {
+    const starttls = {
+      ...config,
+      smtp: { ...config.smtp, port: 587, secure: false, requireTLS: true }
+    };
+    expect(buildSmtpTransportOptions(starttls)).toMatchObject({
+      host: 'smtp.qiye.aliyun.com',
+      port: 587,
+      secure: false,
+      requireTLS: true
+    });
+  });
+
   it('normalizes accepted and rejected recipients from an injected transport', async () => {
     const transport = {
       async sendMail() {
