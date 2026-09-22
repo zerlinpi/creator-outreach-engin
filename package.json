@@ -17,7 +17,8 @@
     "test:provider-pacing": "vitest run tests/integration/provider-pacing-live.integration.test.ts",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "verify": "npm test && npm run typecheck && npm run build",
-    "doctor:build": "npm run build --silent && npm run doctor --silent"
+    "doctor:build": "npm run build --silent && npm run doctor --silent",
+    "probe": "node --env-file-if-exists=.env scripts/probe.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/express": "^2.0.0",
