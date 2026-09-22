@@ -4,6 +4,7 @@ export function isHostnameOrIpv4(value: string): boolean {
   const host = value.trim();
   if (!host || host.length > 253) return false;
   if (isIP(host) === 4) return true;
+  if (/^\d+(?:\.\d+){3}$/.test(host)) return false;
   if (host.includes(':')) return false;
 
   const labels = host.split('.');
