@@ -8,6 +8,7 @@ export interface AttachmentMeta {
 
 export interface NormalizedMessage {
   id: string;
+  account?: string;
   mailbox: string;
   uid: number;
   from: string[];
