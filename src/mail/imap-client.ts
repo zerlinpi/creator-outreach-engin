@@ -160,6 +160,7 @@ function dedupeMessages(messages: NormalizedMessage[]): NormalizedMessage[] {
 
 export class ImapMailClient {
   private readonly semaphore: AsyncSemaphore;
+  private enabled = true;
 
   constructor(
     private readonly config: MailRuntimeConfig,
@@ -167,6 +168,10 @@ export class ImapMailClient {
     private readonly messageRefSecret?: string
   ) {
     this.semaphore = new AsyncSemaphore(config.imap.maxConcurrency ?? 2);
+  }
+
+  disable(): void {
+    this.enabled = false;
   }
 
   private createClient() {
@@ -177,6 +182,7 @@ export class ImapMailClient {
 
   private withClient<T>(fn: (client: ImapFlow) => Promise<T>): Promise<T> {
     return this.semaphore.run(async () => {
+      if (!this.enabled) throw new ConnectorError('ACCOUNT_NOT_FOUND', 'Mail account configuration changed or was removed.');
       const client = this.createClient();
       try {
         await client.connect();
