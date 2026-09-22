@@ -134,7 +134,7 @@ describe('loadConfig', () => {
   it('supports explicit safe bind addresses', () => {
     expect(loadConfig(baseEnv).bindHost).toBe('0.0.0.0');
     expect(loadConfig({ ...baseEnv, CONNECTOR_BIND_HOST: '127.0.0.1' }).bindHost).toBe('127.0.0.1');
-    expect(loadConfig({ ...baseEnv, CONNECTOR_BIND_HOST: '::1' }).bindHost).toBe('::1');
+    expect(() => loadConfig({ ...baseEnv, CONNECTOR_BIND_HOST: '::1' })).toThrow();
     expect(() => loadConfig({ ...baseEnv, CONNECTOR_BIND_HOST: 'example.com' })).toThrow();
   });
 
