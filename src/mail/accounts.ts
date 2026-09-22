@@ -59,12 +59,20 @@ export class MailAccountRegistry {
 
   upsert(account: MailAccountRuntime): void {
     if (!ACCOUNT_ID.test(account.id)) throw new Error('Invalid mail account id.');
+    const previous = this.accounts.get(account.id);
+    if (previous && previous !== account) {
+      previous.imap.disable?.();
+      previous.smtp.disable?.();
+    }
     this.accounts.set(account.id, account);
     this.defaultId ??= account.id;
   }
 
   remove(id: string): void {
     const normalized = id.trim().toLowerCase();
+    const previous = this.accounts.get(normalized);
+    previous?.imap.disable?.();
+    previous?.smtp.disable?.();
     this.accounts.delete(normalized);
     if (this.defaultId === normalized) this.defaultId = this.accounts.keys().next().value;
   }
