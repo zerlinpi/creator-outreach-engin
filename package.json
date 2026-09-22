@@ -4,18 +4,19 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "test": "vitest run",
     "test:integration": "vitest run tests/integration",
     "typecheck": "tsc --noEmit",
     "build": "npm run clean --silent && tsc -p tsconfig.build.json",
-    "start": "node dist/src/server.js",
-    "doctor": "npm run build --silent && node dist/src/doctor.js",
+    "start": "node --env-file-if-exists=.env dist/src/server.js",
+    "doctor": "npm run build --silent && node --env-file-if-exists=.env dist/src/doctor.js",
     "test:limit": "vitest run tests/limit",
     "test:provider-pacing": "vitest run tests/integration/provider-pacing-live.integration.test.ts",
-    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "verify": "npm test && npm run typecheck && npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/express": "^2.0.0",
