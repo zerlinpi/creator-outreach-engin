@@ -57,6 +57,11 @@ describe('Mailbox Manager admin UI', () => {
     expect(scriptEnd).toBeGreaterThan(scriptStart);
     const adminScript = adminHtml.slice(scriptStart + '<script>'.length, scriptEnd);
     expect(() => new Script(adminScript)).not.toThrow();
+    expect(adminHtml).not.toContain(' onclick=');
+    expect(adminHtml).not.toContain(' onchange=');
+    expect(adminHtml).toContain('data-action="test"');
+    expect(adminHtml).toContain('id="addMailbox"');
+    expect(adminHtml).toContain('id="cancelDialog"');
 
     const created = await fetch(root + '/admin/api/accounts', {
       method: 'POST',
