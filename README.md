@@ -190,6 +190,8 @@ CONNECTOR_ALLOWED_HOSTS=domail.campxusainc.com,127.0.0.1
 
 Do not include schemes, ports, paths, or wildcards. `CONNECTOR_JSON_LIMIT` defaults to `1mb` and is restricted to 32 KiB–2 MiB.
 
+For a same-host Nginx deployment, use `CONNECTOR_BIND_HOST=127.0.0.1` and proxy the complete application surface, including `/admin`, `/.well-known/*`, and `/oauth/*`. See `docs/NGINX.md` for the hardened proxy and sensitive-file deny rules.
+
 `GET /health` reports process liveness only. `GET /ready` returns 200 only when at least one mailbox is configured; neither endpoint exposes mailbox credentials or message data.
 
 ## ChatGPT OAuth
