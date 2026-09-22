@@ -1,4 +1,4 @@
-# Mailbox Manager v0.3.4
+# Mailbox Manager v0.3.5
 
 The Mailbox Manager is the recommended way to operate many creator-outreach inboxes from one MCP deployment.
 
@@ -23,7 +23,7 @@ The form supports Alibaba Mail, Gmail, Microsoft 365 / Outlook, and custom endpo
 
 Mailbox passwords are encrypted at rest with AES-256-GCM and are never returned by the admin API or MCP. The encrypted store and `data/` directory are ignored by Git and Docker build context.
 
-Admin pages are no-store, deny framing, reject cross-origin browser mutations, and rate-limit failed Basic-auth attempts. Store and runtime-registry mutations are serialized so concurrent edits cannot silently overwrite each other.
+Admin pages are no-store, deny framing, reject cross-origin browser mutations, and rate-limit failed Basic-auth attempts. The browser script is served as a separate authenticated asset, inline event handlers are not used, and mailbox metadata is rendered with DOM text nodes rather than `innerHTML`. Store and runtime-registry mutations are serialized so concurrent edits cannot silently overwrite each other.
 
 Persist `/app/data` when using Docker.
 
