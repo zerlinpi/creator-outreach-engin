@@ -16,8 +16,8 @@ const HostSchema = z.string().trim().min(1).max(253).refine(
 const AccountInput = z.object({
   id: z.string().regex(/^[a-z][a-z0-9_]{0,31}$/),
   username: z.string().email(),
-  appPassword: z.string().optional(),
-  fromName: z.string().min(1).max(120),
+  appPassword: z.string().max(4096).optional(),
+  fromName: z.string().trim().min(1).max(120).refine((value) => !/[\r\n]/.test(value), 'From name must not contain CR or LF characters.'),
   imapHost: HostSchema,
   imapPort: z.number().int().min(1).max(65535),
   smtpHost: HostSchema,
