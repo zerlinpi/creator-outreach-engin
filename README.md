@@ -159,7 +159,7 @@ Resource defaults:
 - `MAIL_ALL_ACCOUNT_READ_CONCURRENCY=4`
 - `MAIL_MULTI_ACCOUNT_SEND_CONCURRENCY=3`
 
-`MAIL_SEARCH_SOURCE_BYTES` must not exceed `MAIL_MAX_MESSAGE_BYTES`. Cross-account reads and sends are bounded; each account also serializes SMTP sends. Set `MAIL_SMTP_SECURITY=starttls` for providers such as Microsoft 365 that use port 587.
+`MAIL_SEARCH_SOURCE_BYTES` is independently capped at 512 KiB and must not exceed `MAIL_MAX_MESSAGE_BYTES`. Cross-account reads and sends are bounded; each account also serializes SMTP sends. Set `MAIL_SMTP_SECURITY=starttls` for providers such as Microsoft 365 that use port 587.
 
 ### Keep SMTP mail in Sent
 
@@ -209,7 +209,7 @@ The connector exposes:
 - `/oauth/authorize`
 - `/oauth/token`
 
-It uses Authorization Code + PKCE S256, dynamic public-client registration, one-time authorization codes, one-hour access tokens, rotating 30-day refresh tokens with replay rejection, failure rate limits, and `offline_access`. MCP access requires the `mcp:mail` scope.
+It uses Authorization Code + PKCE S256, dynamic public-client registration, one-time authorization codes, one-hour access tokens, rotating 30-day refresh tokens with in-process replay rejection, failure rate limits, and `offline_access`. MCP access requires the `mcp:mail` scope.
 
 The static `CONNECTOR_AUTH_TOKEN` remains valid as an operator/compatibility credential.
 
