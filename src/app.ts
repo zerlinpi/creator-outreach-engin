@@ -70,6 +70,11 @@ export function createHttpApp(deps: HttpAppDependencies) {
     res.status(200).json({ ok: true, service: 'campx-creator-mail' });
   });
 
+  app.get('/ready', (_req, res) => {
+    const ready = registry.size > 0;
+    res.status(ready ? 200 : 503).json({ ok: ready, service: 'campx-creator-mail' });
+  });
+
   if (deps.admin && deps.accountStore && deps.baseConfig) {
     registerMailboxAdmin(app, registry, deps.accountStore, deps.admin, deps.baseConfig);
   }
