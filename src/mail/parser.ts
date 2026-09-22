@@ -22,11 +22,15 @@ function addresses(value: ParsedAddress | ParsedAddress[] | undefined): string[]
   return result;
 }
 
-export async function parseMessage(source: Buffer | string, meta: { id: string; mailbox: string; uid: number; unread?: boolean }): Promise<NormalizedMessage> {
+export async function parseMessage(
+  source: Buffer | string,
+  meta: { id: string; account?: string; mailbox: string; uid: number; unread?: boolean }
+): Promise<NormalizedMessage> {
   const parsed = await simpleParser(source);
   const refs = parsed.references ? (Array.isArray(parsed.references) ? parsed.references : [parsed.references]) : [];
   return {
     id: meta.id,
+    account: meta.account,
     mailbox: meta.mailbox,
     uid: meta.uid,
     from: addresses(parsed.from),
