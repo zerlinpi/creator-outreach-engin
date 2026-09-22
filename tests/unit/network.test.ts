@@ -20,6 +20,7 @@ describe('network host validation', () => {
       '-mail.example.com',
       'mail-.example.com',
       'bad host.example.com',
+      '999.999.999.999',
       '::1'
     ]) {
       expect(isHostnameOrIpv4(value)).toBe(false);
