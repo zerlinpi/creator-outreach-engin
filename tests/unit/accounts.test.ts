@@ -13,9 +13,10 @@ function runtime(id: string): MailAccountRuntime {
 }
 
 describe('MailAccountRegistry', () => {
-  it('resolves the configured default and explicit accounts', () => {
+  it('requires explicit selection when multiple accounts exist', () => {
     const registry = new MailAccountRegistry([runtime('campx'), runtime('hassky')], 'campx');
-    expect(registry.resolve().id).toBe('campx');
+    expect(registry.defaultAccountId).toBe('campx');
+    expect(() => registry.resolve()).toThrowError(expect.objectContaining({ code: 'ACCOUNT_REQUIRED' }));
     expect(registry.resolve('hassky').id).toBe('hassky');
     expect(registry.size).toBe(2);
   });
@@ -37,9 +38,11 @@ describe('MailAccountRegistry', () => {
     );
   });
 
-  it('routes legacy or opaque references through the requested/default account', () => {
+  it('requires an account for opaque legacy references in multi-account mode', () => {
     const registry = new MailAccountRegistry([runtime('campx'), runtime('hassky')], 'campx');
-    expect(registry.resolveForMessage('legacy-test-ref').id).toBe('campx');
+    expect(() => registry.resolveForMessage('legacy-test-ref')).toThrowError(
+      expect.objectContaining({ code: 'ACCOUNT_REQUIRED' })
+    );
     expect(registry.resolveForMessage('legacy-test-ref', 'hassky').id).toBe('hassky');
   });
 });
