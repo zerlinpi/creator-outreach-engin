@@ -1,6 +1,6 @@
 {
   "name": "creator-outreach-engin",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "type": "module",
   "engines": {
@@ -10,11 +10,12 @@
     "test": "vitest run",
     "test:integration": "vitest run tests/integration",
     "typecheck": "tsc --noEmit",
-    "build": "tsc -p tsconfig.json",
+    "build": "npm run clean --silent && tsc -p tsconfig.build.json",
     "start": "node dist/src/server.js",
     "doctor": "npm run build --silent && node dist/src/doctor.js",
     "test:limit": "vitest run tests/limit",
-    "test:provider-pacing": "vitest run tests/integration/provider-pacing-live.integration.test.ts"
+    "test:provider-pacing": "vitest run tests/integration/provider-pacing-live.integration.test.ts",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
     "@modelcontextprotocol/express": "^2.0.0",
