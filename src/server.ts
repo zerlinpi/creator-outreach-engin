@@ -40,14 +40,7 @@ async function main() {
   });
 
   const bindHost = config.bindHost ?? '0.0.0.0';
-  const server = app.listen(config.port, bindHost, () => {
-    console.log('campx-creator-mail listening on ' + bindHost + ':' + config.port + ' with ' + registry.size + ' mailbox(es)');
-  });
-
-  server.on('error', (error) => {
-    console.error(error instanceof Error ? error.message : 'HTTP server failed.');
-    process.exitCode = 1;
-  });
+  const server = app.listen(config.port, bindHost);
 
   let shuttingDown = false;
   const shutdown = (signal: string) => {
@@ -69,8 +62,16 @@ async function main() {
     });
   };
 
-  process.once('SIGTERM', () => shutdown('SIGTERM'));
-  process.once('SIGINT', () => shutdown('SIGINT'));
+  server.once('listening', () => {
+    console.log('campx-creator-mail listening on ' + bindHost + ':' + config.port + ' with ' + registry.size + ' mailbox(es)');
+    process.once('SIGTERM', () => shutdown('SIGTERM'));
+    process.once('SIGINT', () => shutdown('SIGINT'));
+  });
+
+  server.once('error', (error) => {
+    console.error(error instanceof Error ? error.message : 'HTTP server failed.');
+    process.exitCode = 1;
+  });
 }
 
 main().catch((error) => {
