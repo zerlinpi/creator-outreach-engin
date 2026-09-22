@@ -115,9 +115,13 @@ export function encodeMessageRef(
   return 'mr1.' + body + '.' + signature;
 }
 
-export function decodeMessageRef(ref: string, secret?: string): DecodedMessageRef {
+export function decodeMessageRef(ref: string, secret?: string, allowLegacy = false): DecodedMessageRef {
   try {
     if (secret) {
+      if (!ref.startsWith('mr1.')) {
+        if (!allowLegacy) throw new Error('unsigned legacy ref is not allowed');
+        return parseRefBody(ref);
+      }
       const [version, body, signature, extra] = ref.split('.');
       if (version !== 'mr1' || !body || !signature || extra) throw new Error('bad signed ref');
       const expected = createHmac('sha256', secret).update(body).digest('base64url');
@@ -252,7 +256,7 @@ export class ImapMailClient {
   }
 
   async getEmail(ref: string): Promise<NormalizedMessage> {
-    const { account, mailbox, uid, uidValidity } = decodeMessageRef(ref, this.messageRefSecret);
+    const { account, mailbox, uid, uidValidity } = decodeMessageRef(ref, this.messageRefSecret, true);
     if (account && account !== this.accountId) {
       throw new ConnectorError('ACCOUNT_MISMATCH', 'The message reference belongs to a different mail account.');
     }
