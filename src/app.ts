@@ -27,6 +27,8 @@ export interface HttpAppDependencies {
   admin?: MailAdminConfig;
   accountStore?: EncryptedAccountStore;
   baseConfig?: AppConfig;
+  allAccountReadConcurrency?: number;
+  multiAccountSendConcurrency?: number;
 }
 
 function buildRegistry(deps: HttpAppDependencies): MailAccountRegistry {
@@ -48,10 +50,13 @@ export function createHttpApp(deps: HttpAppDependencies) {
   const registry = buildRegistry(deps);
   const handler = createMcpHandler(() => {
     const server = new McpServer(
-      { name: 'campx-creator-mail', version: '0.1.0' },
+      { name: 'campx-creator-mail', version: '0.3.0' },
       { capabilities: { tools: {} } }
     );
-    registerMailTools(server, registry, idempotency);
+    registerMailTools(server, registry, idempotency, {
+      allAccountReadConcurrency: deps.allAccountReadConcurrency,
+      multiAccountSendConcurrency: deps.multiAccountSendConcurrency
+    });
     return server;
   });
 
