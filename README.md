@@ -4,17 +4,39 @@ Remote MCP email connector for creator outreach. It is designed to be used direc
 
 The connector now supports multiple isolated sender mailboxes behind one MCP endpoint. A single ChatGPT app can search, read, send, reply, and batch-send from accounts such as `campx`, `hassky`, or future brands without running one MCP server per mailbox.
 
+## Mailbox Manager UI (recommended)
+
+Version **0.2.0** adds a browser mailbox manager so the server does not need one environment-variable block per mailbox.
+
+Configure only the admin/encryption secrets:
+
+```env
+MAIL_ADMIN_PASSWORD=<strong-password-at-least-16-characters>
+MAIL_ACCOUNT_STORE_KEY=<random-secret-at-least-32-characters>
+MAIL_ACCOUNT_STORE_PATH=./data/mail-accounts.enc.json
+MAIL_MAX_ACCOUNTS=50
+```
+
+Then open `https://your-domain/admin` and sign in with username `admin` plus `MAIL_ADMIN_PASSWORD`.
+
+The UI can add, edit, test, delete, and choose the default mailbox. UI-managed mailbox passwords are encrypted at rest with AES-256-GCM. Passwords are never returned by the admin API or exposed through MCP tools.
+
+For Docker deployments, persist `/app/data` as a volume so UI-added mailboxes survive container replacement.
+
+Environment-configured mailboxes remain supported and appear as read-only accounts in the UI. Do not configure the same account id in both environment variables and UI storage.
+
+
 ## What it can do
 
 Exactly seven MCP tools are exposed:
 
 - `list_mailboxes` — discover configured mail accounts and their IMAP folders.
-- `search_emails` — search one account by sender, recipient, subject, date, unread state, mailbox, or body text.
+- `search_emails` — search one account or all configured accounts; all-account results carry explicit `account` and `accountAddress` source identity.
 - `get_email` — read one message by stable connector reference; HTML is opt-in and sanitized.
 - `get_thread` — reconstruct a conversation inside one account across Inbox and Sent.
 - `send_email` — send one new outreach message from a selected account.
 - `reply_email` — reply from the same account that owns the selected message.
-- `send_email_batch` — dry-run or send separate personalized messages from one selected account.
+- `send_email_batch` — send from one account or explicitly route each message to different accounts; different account groups can run concurrently while each account remains sequential.
 
 The tool count stays fixed as more mailboxes are added. Account selection is a parameter, not a new tool.
 
@@ -70,7 +92,7 @@ Multi-mailbox routing is intentionally fail-closed:
 - Outbound SMTP `From` identity comes from the selected account only.
 - Reply self-address filtering uses the selected account's address.
 - Idempotency keys are namespaced by account, so the same business key can safely be used once by `campx` and once by `hassky`.
-- One batch invocation can use only one sender account; cross-account mixed batches are not supported.
+- Multi-account batch mode requires an explicit `account` on every message and forbids a top-level sender account. Results are labeled with sender account/address, different account groups run concurrently, and each individual account remains sequential.
 - Failure of one mailbox does not remove the others from `list_mailboxes`; per-account listing status is returned independently.
 
 This prevents a CAMPX thread from silently being answered by a HASSKY sender identity.
@@ -89,7 +111,7 @@ is optional. When omitted, `MAIL_DEFAULT_ACCOUNT` is used.
 
 For `get_email`, `get_thread`, and `reply_email`, new message references select the account automatically. Supplying `account` is optional and acts as an additional safety check.
 
-`list_mailboxes` with no account returns all configured accounts. With an account argument it inspects only that account.
+`list_mailboxes` with no account returns all configured accounts. With an account argument it inspects only that account. When the user asks to check every mailbox, call `search_emails` with `all_accounts=true`; partial mailbox failures are returned separately and do not erase successful results.
 
 ## Write safety
 

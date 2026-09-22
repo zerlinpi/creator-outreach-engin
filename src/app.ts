@@ -3,14 +3,18 @@ import { createMcpExpressApp } from '@modelcontextprotocol/express';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import { isAuthorized } from './auth/bearer.js';
 import { isOAuthAuthorized, oauthChallenge, registerOAuthRoutes, type OAuthConfig } from './auth/oauth.js';
+import type { AppConfig, MailAdminConfig } from './config.js';
 import type { ImapMailClient } from './mail/imap-client.js';
 import type { SmtpMailClient } from './mail/smtp-client.js';
 import { IdempotencyStore } from './mail/idempotency.js';
 import { MailAccountRegistry, type MailAccountRuntime } from './mail/accounts.js';
+import type { EncryptedAccountStore } from './mail/account-store.js';
+import { registerMailboxAdmin } from './admin.js';
 import { registerMailTools } from './tools/register.js';
 
 export interface HttpAppDependencies {
   authToken: string;
+  registry?: MailAccountRegistry;
   accounts?: MailAccountRuntime[];
   defaultAccount?: string;
   mailboxAddress?: string;
@@ -20,19 +24,20 @@ export interface HttpAppDependencies {
   jsonLimit?: string;
   oauth?: OAuthConfig;
   idempotencyStore?: IdempotencyStore;
+  admin?: MailAdminConfig;
+  accountStore?: EncryptedAccountStore;
+  baseConfig?: AppConfig;
 }
 
 function buildRegistry(deps: HttpAppDependencies): MailAccountRegistry {
-  if (deps.accounts?.length) {
-    return new MailAccountRegistry(deps.accounts, deps.defaultAccount);
-  }
-  if (!deps.mailboxAddress || !deps.imap || !deps.smtp) {
-    throw new Error('Mail account dependencies are required.');
-  }
+  if (deps.registry) return deps.registry;
+  if (deps.accounts) return new MailAccountRegistry(deps.accounts, deps.defaultAccount);
+  if (!deps.mailboxAddress || !deps.imap || !deps.smtp) return new MailAccountRegistry();
   return new MailAccountRegistry([{
     id: deps.defaultAccount ?? 'default',
     address: deps.mailboxAddress,
     fromName: 'Default',
+    source: 'environment',
     imap: deps.imap,
     smtp: deps.smtp
   }], deps.defaultAccount ?? 'default');
@@ -60,9 +65,11 @@ export function createHttpApp(deps: HttpAppDependencies) {
     res.status(200).json({ ok: true, service: 'campx-creator-mail' });
   });
 
-  if (deps.oauth) {
-    registerOAuthRoutes(app, deps.oauth);
+  if (deps.admin && deps.accountStore && deps.baseConfig) {
+    registerMailboxAdmin(app, registry, deps.accountStore, deps.admin, deps.baseConfig);
   }
+
+  if (deps.oauth) registerOAuthRoutes(app, deps.oauth);
 
   app.use('/mcp', (req, res, next) => {
     const authorization = req.header('authorization');
