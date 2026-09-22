@@ -44,7 +44,7 @@ const EnvSchema = z.object({
   MAIL_ACCOUNT_STORE_PATH: z.string().min(1).default('./data/mail-accounts.enc.json'),
   MAIL_MAX_ACCOUNTS: z.coerce.number().int().min(1).max(100).default(50),
   CONNECTOR_AUTH_TOKEN: z.string().min(32),
-  CONNECTOR_BIND_HOST: z.enum(['0.0.0.0', '127.0.0.1', '::', '::1']).default('0.0.0.0'),
+  CONNECTOR_BIND_HOST: z.enum(['0.0.0.0', '127.0.0.1']).default('0.0.0.0'),
   CONNECTOR_ALLOWED_HOSTS: z.preprocess(blankToUndefined, z.string().min(1).optional()),
   CONNECTOR_JSON_LIMIT: z.string().min(1).default('1mb'),
   OAUTH_ISSUER: z.preprocess(blankToUndefined, z.string().min(1).optional()),
@@ -88,7 +88,7 @@ export interface MailAdminConfig {
 
 export interface AppConfig extends MailRuntimeConfig {
   authToken: string;
-  bindHost?: '0.0.0.0' | '127.0.0.1' | '::' | '::1';
+  bindHost?: '0.0.0.0' | '127.0.0.1';
   allowedHosts?: string[];
   jsonLimit: string;
   port: number;
