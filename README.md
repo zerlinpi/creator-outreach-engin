@@ -223,6 +223,14 @@ curl -i -X POST https://domail.campxusainc.com/mcp -H 'Content-Type: application
 
 The discovery endpoints should return HTTP 200. The unauthenticated MCP request should return HTTP 401 with a `WWW-Authenticate` challenge.
 
+After deployment, run:
+
+```bash
+npm run probe
+```
+
+The probe uses `OAUTH_ISSUER` as the public base URL when configured, otherwise it checks the local `PORT`. It verifies health/readiness, favicon handling, the admin auth gate, OAuth discovery, and the unauthenticated MCP challenge without printing secrets.
+
 ## Run locally
 
 ```bash
