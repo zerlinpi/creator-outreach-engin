@@ -178,11 +178,23 @@ describe('OAuth authorization surface', () => {
       })
     });
     expect(refreshed.status).toBe(200);
-    expect(await refreshed.json()).toMatchObject({
+    const refreshedBody = await refreshed.json() as { access_token: string; refresh_token: string; token_type: string };
+    expect(refreshedBody).toMatchObject({
       access_token: expect.stringMatching(/^oa\./),
       refresh_token: expect.stringMatching(/^or\./),
       token_type: 'Bearer'
     });
+
+    const refreshReplay = await fetch(`${baseUrl}/oauth/token`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        client_id: registered.client_id,
+        refresh_token: tokenBody.refresh_token
+      })
+    });
+    expect(refreshReplay.status).toBe(400);
 
     const client = new Client(
       { name: 'oauth-connector-test', version: '1.0.0' },
