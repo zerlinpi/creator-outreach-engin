@@ -1,6 +1,7 @@
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import { createMcpExpressApp } from '@modelcontextprotocol/express';
 import { toNodeHandler } from '@modelcontextprotocol/node';
+import { AsyncSemaphore } from './concurrency.js';
 import { isAuthorized } from './auth/bearer.js';
 import { isOAuthAuthorized, oauthChallenge, registerOAuthRoutes, type OAuthConfig } from './auth/oauth.js';
 import type { AppConfig, MailAdminConfig } from './config.js';
@@ -48,14 +49,20 @@ function buildRegistry(deps: HttpAppDependencies): MailAccountRegistry {
 export function createHttpApp(deps: HttpAppDependencies) {
   const idempotency = deps.idempotencyStore ?? new IdempotencyStore();
   const registry = buildRegistry(deps);
+  const allAccountReadConcurrency = deps.allAccountReadConcurrency ?? 4;
+  const multiAccountSendConcurrency = deps.multiAccountSendConcurrency ?? 3;
+  const allAccountReadLimiter = new AsyncSemaphore(allAccountReadConcurrency);
+  const multiAccountSendLimiter = new AsyncSemaphore(multiAccountSendConcurrency);
   const handler = createMcpHandler(() => {
     const server = new McpServer(
       { name: 'campx-creator-mail', version: '0.3.0' },
       { capabilities: { tools: {} } }
     );
     registerMailTools(server, registry, idempotency, {
-      allAccountReadConcurrency: deps.allAccountReadConcurrency,
-      multiAccountSendConcurrency: deps.multiAccountSendConcurrency
+      allAccountReadConcurrency,
+      multiAccountSendConcurrency,
+      allAccountReadLimiter,
+      multiAccountSendLimiter
     });
     return server;
   });
