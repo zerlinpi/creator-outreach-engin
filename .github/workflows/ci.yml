@@ -58,6 +58,7 @@ jobs:
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:3100/favicon.ico)" = "204"
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:3100/admin)" = "401"
           curl --fail --silent --user admin:admin-password-1234 http://127.0.0.1:3100/admin | grep 'data-action="test"'
+          DEPLOY_BASE_URL=http://127.0.0.1:3100 npm run probe
           kill "${SERVER_PID}"
           wait "${SERVER_PID}" || true
           trap - EXIT
