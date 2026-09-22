@@ -46,6 +46,17 @@ describe('stable IMAP message references', () => {
     expect(decodeMessageRef(ref)).toEqual({ mailbox: 'INBOX/Creators', uid: 1234, uidValidity: '987654321' });
   });
 
+  it('binds new references to a mail account without exposing the account in plain text', () => {
+    const ref = encodeMessageRef('INBOX', 7, 11, 'hassky');
+    expect(ref).not.toContain('hassky');
+    expect(decodeMessageRef(ref)).toEqual({
+      account: 'hassky',
+      mailbox: 'INBOX',
+      uid: 7,
+      uidValidity: '11'
+    });
+  });
+
   it('rejects legacy or malformed references that are not bound to UIDVALIDITY', () => {
     const legacy = Buffer.from(JSON.stringify({ mailbox: 'INBOX', uid: 1 }), 'utf8').toString('base64url');
     expect(() => decodeMessageRef(legacy)).toThrowError(ConnectorError);
@@ -99,7 +110,6 @@ describe('IMAP resource policy', () => {
     }
   });
 });
-
 
 describe('IMAP error event safety', () => {
   it('consumes emitted error events so transport timeouts do not crash the Node process', () => {

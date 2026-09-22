@@ -37,7 +37,57 @@ describe('loadConfig', () => {
     expect(config.maxMessageBytes).toBe(10 * 1024 * 1024);
     expect(config.searchSourceBytes).toBe(128 * 1024);
     expect(config.fromName).toBe('CAMPX');
+    expect(config.defaultAccount).toBe('default');
+    expect(Object.keys(config.accounts ?? {})).toEqual(['default']);
     expect(config.jsonLimit).toBe('1mb');
+  });
+
+  it('supports named multi-mailbox accounts with isolated credentials and sender identity', () => {
+    const config = loadConfig({
+      CONNECTOR_AUTH_TOKEN: 'test-token-1234567890-abcdef-xyz',
+      MAIL_ACCOUNTS: 'campx,hassky',
+      MAIL_DEFAULT_ACCOUNT: 'hassky',
+      MAIL_CAMPX_USERNAME: 'campx@example.com',
+      MAIL_CAMPX_APP_PASSWORD: 'campx-secret',
+      MAIL_CAMPX_FROM_NAME: 'CAMPX',
+      MAIL_HASSKY_USERNAME: 'hassky@example.com',
+      MAIL_HASSKY_APP_PASSWORD: 'hassky-secret',
+      MAIL_HASSKY_FROM_NAME: 'HASSKY Mobility',
+      MAIL_HASSKY_IMAP_HOST: 'imap.hassky.example.com',
+      MAIL_HASSKY_SMTP_HOST: 'smtp.hassky.example.com'
+    });
+
+    expect(config.defaultAccount).toBe('hassky');
+    expect(config.username).toBe('hassky@example.com');
+    expect(config.fromName).toBe('HASSKY Mobility');
+    expect(Object.keys(config.accounts ?? {})).toEqual(['campx', 'hassky']);
+    expect(config.accounts?.campx).toMatchObject({
+      id: 'campx',
+      username: 'campx@example.com',
+      fromName: 'CAMPX'
+    });
+    expect(config.accounts?.hassky).toMatchObject({
+      id: 'hassky',
+      username: 'hassky@example.com',
+      fromName: 'HASSKY Mobility',
+      imap: { host: 'imap.hassky.example.com' },
+      smtp: { host: 'smtp.hassky.example.com' }
+    });
+  });
+
+  it('fails closed for incomplete or ambiguous multi-mailbox configuration', () => {
+    const shared = {
+      CONNECTOR_AUTH_TOKEN: 'test-token-1234567890-abcdef-xyz',
+      MAIL_ACCOUNTS: 'campx,hassky',
+      MAIL_CAMPX_USERNAME: 'campx@example.com',
+      MAIL_CAMPX_APP_PASSWORD: 'campx-secret',
+      MAIL_CAMPX_FROM_NAME: 'CAMPX',
+      MAIL_HASSKY_USERNAME: 'hassky@example.com',
+      MAIL_HASSKY_APP_PASSWORD: 'hassky-secret'
+    };
+    expect(() => loadConfig(shared)).toThrow();
+    expect(() => loadConfig({ ...shared, MAIL_HASSKY_FROM_NAME: 'HASSKY', MAIL_DEFAULT_ACCOUNT: 'missing' })).toThrow();
+    expect(() => loadConfig({ ...shared, MAIL_HASSKY_FROM_NAME: 'HASSKY', MAIL_ACCOUNTS: 'campx,campx' })).toThrow();
   });
 
   it('parses a deployment host allowlist', () => {

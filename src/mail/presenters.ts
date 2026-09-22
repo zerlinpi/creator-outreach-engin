@@ -2,6 +2,7 @@ import type { AttachmentMeta, NormalizedMessage } from './types.js';
 
 export interface SearchEmailSummary {
   id: string;
+  account?: string;
   mailbox: string;
   from: string[];
   to: string[];
@@ -17,6 +18,7 @@ export interface SearchEmailSummary {
 
 export interface EmailView {
   id: string;
+  account?: string;
   mailbox: string;
   uid: number;
   from: string[];
@@ -42,7 +44,7 @@ function compactWhitespace(value: string): string {
 
 function preview(value: string, max = 280): string {
   const compact = compactWhitespace(value);
-  return compact.length <= max ? compact : `${compact.slice(0, max - 1)}…`;
+  return compact.length <= max ? compact : compact.slice(0, max - 1) + '…';
 }
 
 export function sanitizeHtmlForTool(html: string): string {
@@ -57,6 +59,7 @@ export function sanitizeHtmlForTool(html: string): string {
 export function toSearchSummary(message: NormalizedMessage): SearchEmailSummary {
   return {
     id: message.id,
+    account: message.account,
     mailbox: message.mailbox,
     from: message.from,
     to: message.to,
@@ -74,6 +77,7 @@ export function toSearchSummary(message: NormalizedMessage): SearchEmailSummary 
 export function toEmailView(message: NormalizedMessage, includeHtml = false): EmailView {
   const view: EmailView = {
     id: message.id,
+    account: message.account,
     mailbox: message.mailbox,
     uid: message.uid,
     from: message.from,
