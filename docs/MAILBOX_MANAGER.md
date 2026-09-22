@@ -1,4 +1,4 @@
-# Mailbox Manager v0.3.0
+# Mailbox Manager v0.3.4
 
 The Mailbox Manager is the recommended way to operate many creator-outreach inboxes from one MCP deployment.
 
@@ -88,6 +88,6 @@ Every message must name its sender in multi-account batch mode. Different accoun
 
 ## Deployment checks
 
-Use `GET /health` for process liveness and `GET /ready` for mailbox readiness. Run `npm run doctor` to test each configured IMAP/SMTP account without sending mail.
+Use `GET /health` for process liveness and `GET /ready` for mailbox readiness. After building, run `npm run doctor` to test each configured IMAP/SMTP account without sending mail; it no longer rebuilds or deletes production `dist/`. Run `npm run probe` after deployment to verify the public HTTP/OAuth/MCP surface.
 
 Production guidance remains single replica because idempotency state is process-local.
