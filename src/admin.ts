@@ -45,7 +45,10 @@ function adminAuth(password: string) {
     const header = req.header('authorization') ?? '';
     if (header.startsWith('Basic ')) {
       try {
-        const [username, supplied = ''] = Buffer.from(header.slice(6), 'base64').toString('utf8').split(':', 2);
+        const credentials = Buffer.from(header.slice(6), 'base64').toString('utf8');
+        const separator = credentials.indexOf(':');
+        const username = separator >= 0 ? credentials.slice(0, separator) : credentials;
+        const supplied = separator >= 0 ? credentials.slice(separator + 1) : '';
         if (username === 'admin' && safeEqual(supplied, password)) {
           limiter.success(key);
           return next();
