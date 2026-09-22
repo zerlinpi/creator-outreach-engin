@@ -1,5 +1,7 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { ImapFlow } from 'imapflow';
 import type { MailRuntimeConfig } from '../config.js';
+import { AsyncSemaphore } from '../concurrency.js';
 import { ConnectorError } from '../errors.js';
 import { parseMessage } from './parser.js';
 import { normalizeSubject, resolveThread } from './threading.js';
@@ -66,42 +68,67 @@ export function enforceMessageSize(size: number, maxBytes: number): void {
   }
 }
 
+function parseRefBody(body: string): DecodedMessageRef {
+  const value = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+  if (
+    (value.account !== undefined && (typeof value.account !== 'string' || !/^[a-z][a-z0-9_]{0,31}$/.test(value.account))) ||
+    typeof value.mailbox !== 'string' ||
+    value.mailbox.length < 1 ||
+    value.mailbox.length > 1024 ||
+    !Number.isInteger(value.uid) ||
+    value.uid < 1 ||
+    typeof value.uidValidity !== 'string' ||
+    !/^\d+$/.test(value.uidValidity)
+  ) {
+    throw new Error('bad ref');
+  }
+  return {
+    ...(value.account ? { account: value.account } : {}),
+    mailbox: value.mailbox,
+    uid: value.uid,
+    uidValidity: value.uidValidity
+  };
+}
+
+function safeSignatureEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
 export function encodeMessageRef(
   mailbox: string,
   uid: number,
   uidValidity: bigint | string | number,
-  account?: string
+  account?: string,
+  secret?: string
 ): string {
-  const value = {
+  const body = Buffer.from(JSON.stringify({
     ...(account ? { account } : {}),
     mailbox,
     uid,
     uidValidity: String(uidValidity)
-  };
-  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+  }), 'utf8').toString('base64url');
+
+  if (!secret) return body;
+  const signature = createHmac('sha256', secret).update(body).digest('base64url');
+  return 'mr1.' + body + '.' + signature;
 }
 
-export function decodeMessageRef(ref: string): DecodedMessageRef {
+export function decodeMessageRef(ref: string, secret?: string): DecodedMessageRef {
   try {
-    const value = JSON.parse(Buffer.from(ref, 'base64url').toString('utf8'));
-    if (
-      (value.account !== undefined && (typeof value.account !== 'string' || !/^[a-z][a-z0-9_]{0,31}$/.test(value.account))) ||
-      typeof value.mailbox !== 'string' ||
-      !Number.isInteger(value.uid) ||
-      value.uid < 1 ||
-      typeof value.uidValidity !== 'string' ||
-      !/^\d+$/.test(value.uidValidity)
-    ) {
-      throw new Error('bad ref');
+    if (secret) {
+      const [version, body, signature, extra] = ref.split('.');
+      if (version !== 'mr1' || !body || !signature || extra) throw new Error('bad signed ref');
+      const expected = createHmac('sha256', secret).update(body).digest('base64url');
+      if (!safeSignatureEqual(signature, expected)) throw new Error('bad signature');
+      return parseRefBody(body);
     }
-    return {
-      ...(value.account ? { account: value.account } : {}),
-      mailbox: value.mailbox,
-      uid: value.uid,
-      uidValidity: value.uidValidity
-    };
+
+    if (ref.startsWith('mr1.')) throw new Error('signed ref requires verification secret');
+    return parseRefBody(ref);
   } catch {
-    throw new ConnectorError('MESSAGE_NOT_FOUND', 'Invalid message reference.');
+    throw new ConnectorError('MESSAGE_NOT_FOUND', 'Invalid or tampered message reference.');
   }
 }
 
@@ -128,10 +155,15 @@ function dedupeMessages(messages: NormalizedMessage[]): NormalizedMessage[] {
 }
 
 export class ImapMailClient {
+  private readonly semaphore: AsyncSemaphore;
+
   constructor(
     private readonly config: MailRuntimeConfig,
-    readonly accountId: string = 'default'
-  ) {}
+    readonly accountId: string = 'default',
+    private readonly messageRefSecret?: string
+  ) {
+    this.semaphore = new AsyncSemaphore(config.imap.maxConcurrency ?? 2);
+  }
 
   private createClient() {
     const client = new ImapFlow(buildImapClientOptions(this.config));
@@ -139,19 +171,21 @@ export class ImapMailClient {
     return client;
   }
 
-  private async withClient<T>(fn: (client: ImapFlow) => Promise<T>): Promise<T> {
-    const client = this.createClient();
-    try {
-      await client.connect();
-      return await fn(client);
-    } catch (error) {
-      if (error instanceof ConnectorError) throw error;
-      throw classifyImapError(error);
-    } finally {
+  private withClient<T>(fn: (client: ImapFlow) => Promise<T>): Promise<T> {
+    return this.semaphore.run(async () => {
+      const client = this.createClient();
       try {
-        if (client.usable) await client.logout();
-      } catch {}
-    }
+        await client.connect();
+        return await fn(client);
+      } catch (error) {
+        if (error instanceof ConnectorError) throw error;
+        throw classifyImapError(error);
+      } finally {
+        try {
+          if (client.usable) await client.logout();
+        } catch {}
+      }
+    });
   }
 
   async listMailboxes() {
@@ -203,7 +237,7 @@ export class ImapMailClient {
         const truncated = fullSize > item.source.length;
         out.push({
           ...(await parseMessage(item.source, {
-            id: encodeMessageRef(mailbox, uid, uidValidity, this.accountId),
+            id: encodeMessageRef(mailbox, uid, uidValidity, this.accountId, this.messageRefSecret),
             account: this.accountId,
             mailbox,
             uid,
@@ -218,7 +252,7 @@ export class ImapMailClient {
   }
 
   async getEmail(ref: string): Promise<NormalizedMessage> {
-    const { account, mailbox, uid, uidValidity } = decodeMessageRef(ref);
+    const { account, mailbox, uid, uidValidity } = decodeMessageRef(ref, this.messageRefSecret);
     if (account && account !== this.accountId) {
       throw new ConnectorError('ACCOUNT_MISMATCH', 'The message reference belongs to a different mail account.');
     }
