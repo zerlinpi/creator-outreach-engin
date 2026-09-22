@@ -125,6 +125,10 @@ describe('loadConfig', () => {
   it('parses a deployment host allowlist', () => {
     const config = loadConfig({ ...baseEnv, CONNECTOR_ALLOWED_HOSTS: 'mail.campxusainc.com, localhost ,127.0.0.1' });
     expect(config.allowedHosts).toEqual(['mail.campxusainc.com', 'localhost', '127.0.0.1']);
+    expect(() => loadConfig({ ...baseEnv, CONNECTOR_ALLOWED_HOSTS: 'bad host.example.com' })).toThrow();
+    expect(() => loadConfig({ ...baseEnv, CONNECTOR_ALLOWED_HOSTS: '.example.com' })).toThrow();
+    expect(() => loadConfig({ ...baseEnv, CONNECTOR_ALLOWED_HOSTS: 'example..com' })).toThrow();
+    expect(() => loadConfig({ ...baseEnv, CONNECTOR_ALLOWED_HOSTS: '*.example.com' })).toThrow();
   });
 
   it('requires a host allowlist in production', () => {
