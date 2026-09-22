@@ -34,7 +34,9 @@ async function main() {
     oauth: config.oauth,
     admin: config.mailAdmin,
     accountStore,
-    baseConfig: config
+    baseConfig: config,
+    allAccountReadConcurrency: config.allAccountReadConcurrency,
+    multiAccountSendConcurrency: config.multiAccountSendConcurrency
   });
 
   app.listen(config.port, '0.0.0.0', () => {
