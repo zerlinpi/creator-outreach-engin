@@ -183,6 +183,8 @@ Example:
 
 ```env
 NODE_ENV=production
+# For a same-host Nginx reverse proxy, bind the Node service to loopback only.
+CONNECTOR_BIND_HOST=127.0.0.1
 CONNECTOR_ALLOWED_HOSTS=domail.campxusainc.com,127.0.0.1
 ```
 
