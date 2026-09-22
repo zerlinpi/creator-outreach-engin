@@ -22,7 +22,16 @@ const base = (overrides: Partial<NormalizedMessage>): NormalizedMessage => ({
 
 describe('threading', () => {
   it('normalizes repeated reply prefixes', () => expect(normalizeSubject('Re: RE:  Hello')).toBe('Hello'));
+  it('removes CRLF and collapses whitespace from external subjects', () => {
+    expect(normalizeSubject('Re: Hello\r\nBcc: attacker@example.com')).toBe('Hello Bcc: attacker@example.com');
+  });
   it('builds deduplicated reply headers', () => expect(buildReplyHeaders({ messageId: '<m2@test>', references: ['<m1@test>', '<m2@test>'] })).toEqual({ inReplyTo: '<m2@test>', references: ['<m1@test>', '<m2@test>'] }));
+  it('drops unsafe external thread header values', () => {
+    expect(buildReplyHeaders({
+      messageId: '<m2@test>\r\nBcc: attacker@example.com',
+      references: ['<safe@test>', '<bad@test>\nX-Evil: 1']
+    })).toEqual({ inReplyTo: undefined, references: ['<safe@test>'] });
+  });
 
   it('resolves exact reference chains before heuristic messages', () => {
     const messages = [
