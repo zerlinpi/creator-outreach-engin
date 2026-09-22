@@ -13,12 +13,19 @@ const ReadConcurrencySchema = z.coerce.number().int().min(1).max(16);
 const SendConcurrencySchema = z.coerce.number().int().min(1).max(10);
 const SmtpSecuritySchema = z.enum(['tls', 'starttls']);
 
+function optionalEnv<T extends z.ZodTypeAny>(schema: T) {
+  return z.preprocess(
+    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    schema.optional()
+  );
+}
+
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  MAIL_USERNAME: EmailSchema.optional(),
-  MAIL_APP_PASSWORD: z.string().min(1).optional(),
+  MAIL_USERNAME: optionalEnv(EmailSchema),
+  MAIL_APP_PASSWORD: optionalEnv(z.string().min(1)),
   MAIL_ACCOUNTS: z.string().optional(),
-  MAIL_DEFAULT_ACCOUNT: z.string().optional(),
+  MAIL_DEFAULT_ACCOUNT: optionalEnv(z.string().min(1)),
   MAIL_IMAP_HOST: z.string().min(1).default('imap.qiye.aliyun.com'),
   MAIL_IMAP_PORT: PortSchema.default(993),
   MAIL_IMAP_ACCOUNT_CONCURRENCY: ImapConcurrencySchema.default(2),
@@ -31,19 +38,19 @@ const EnvSchema = z.object({
   MAIL_SOCKET_TIMEOUT_MS: TimeoutSchema.default(30_000),
   MAIL_MAX_MESSAGE_BYTES: FullMessageByteSizeSchema.default(10 * 1024 * 1024),
   MAIL_SEARCH_SOURCE_BYTES: SearchSourceByteSizeSchema.default(128 * 1024),
-  MAIL_MESSAGE_REF_SIGNING_KEY: z.string().min(32).optional(),
+  MAIL_MESSAGE_REF_SIGNING_KEY: optionalEnv(z.string().min(32)),
   MAIL_ALL_ACCOUNT_READ_CONCURRENCY: ReadConcurrencySchema.default(4),
   MAIL_MULTI_ACCOUNT_SEND_CONCURRENCY: SendConcurrencySchema.default(3),
-  MAIL_ADMIN_PASSWORD: z.string().min(16).optional(),
-  MAIL_ACCOUNT_STORE_KEY: z.string().min(32).optional(),
+  MAIL_ADMIN_PASSWORD: optionalEnv(z.string().min(16)),
+  MAIL_ACCOUNT_STORE_KEY: optionalEnv(z.string().min(32)),
   MAIL_ACCOUNT_STORE_PATH: z.string().min(1).default('./data/mail-accounts.enc.json'),
   MAIL_MAX_ACCOUNTS: z.coerce.number().int().min(1).max(100).default(50),
   CONNECTOR_AUTH_TOKEN: z.string().min(32),
-  CONNECTOR_ALLOWED_HOSTS: z.string().optional(),
+  CONNECTOR_ALLOWED_HOSTS: optionalEnv(z.string().min(1)),
   CONNECTOR_JSON_LIMIT: z.string().min(1).default('1mb'),
-  OAUTH_ISSUER: z.string().optional(),
-  OAUTH_LOGIN_PASSWORD: z.string().min(16).optional(),
-  OAUTH_SIGNING_SECRET: z.string().min(32).optional(),
+  OAUTH_ISSUER: optionalEnv(z.string().min(1)),
+  OAUTH_LOGIN_PASSWORD: optionalEnv(z.string().min(16)),
+  OAUTH_SIGNING_SECRET: optionalEnv(z.string().min(32)),
   PORT: PortSchema.default(3000)
 });
 
