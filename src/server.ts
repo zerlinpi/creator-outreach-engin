@@ -39,9 +39,38 @@ async function main() {
     multiAccountSendConcurrency: config.multiAccountSendConcurrency
   });
 
-  app.listen(config.port, '0.0.0.0', () => {
-    console.log('campx-creator-mail listening on :' + config.port + ' with ' + registry.size + ' mailbox(es)');
+  const bindHost = config.bindHost ?? '0.0.0.0';
+  const server = app.listen(config.port, bindHost, () => {
+    console.log('campx-creator-mail listening on ' + bindHost + ':' + config.port + ' with ' + registry.size + ' mailbox(es)');
   });
+
+  server.on('error', (error) => {
+    console.error(error instanceof Error ? error.message : 'HTTP server failed.');
+    process.exitCode = 1;
+  });
+
+  let shuttingDown = false;
+  const shutdown = (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log('campx-creator-mail shutting down after ' + signal + '.');
+    const forceExit = setTimeout(() => {
+      console.error('Graceful shutdown timed out.');
+      process.exit(1);
+    }, 10_000);
+    forceExit.unref();
+
+    server.close((error) => {
+      clearTimeout(forceExit);
+      if (error) {
+        console.error('HTTP server shutdown failed.');
+        process.exitCode = 1;
+      }
+    });
+  };
+
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
 }
 
 main().catch((error) => {
