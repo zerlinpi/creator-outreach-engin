@@ -55,7 +55,7 @@ export function createHttpApp(deps: HttpAppDependencies) {
   const multiAccountSendLimiter = new AsyncSemaphore(multiAccountSendConcurrency);
   const handler = createMcpHandler(() => {
     const server = new McpServer(
-      { name: 'campx-creator-mail', version: '0.3.1' },
+      { name: 'campx-creator-mail', version: '0.3.2' },
       { capabilities: { tools: {} } }
     );
     registerMailTools(server, registry, idempotency, {
