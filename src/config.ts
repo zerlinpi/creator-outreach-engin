@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { z } from 'zod';
 import type { OAuthConfig } from './auth/oauth.js';
+import { isHostnameOrIpv4 } from './network.js';
 
 const PortSchema = z.coerce.number().int().min(1).max(65535);
 const TimeoutSchema = z.coerce.number().int().min(1_000).max(120_000);
@@ -23,10 +24,10 @@ const EnvSchema = z.object({
   MAIL_APP_PASSWORD: z.preprocess(blankToUndefined, z.string().min(1).optional()),
   MAIL_ACCOUNTS: z.string().optional(),
   MAIL_DEFAULT_ACCOUNT: z.preprocess(blankToUndefined, z.string().min(1).optional()),
-  MAIL_IMAP_HOST: z.string().min(1).default('imap.qiye.aliyun.com'),
+  MAIL_IMAP_HOST: z.string().trim().refine(isHostnameOrIpv4, 'Invalid IMAP hostname or IPv4 address.').default('imap.qiye.aliyun.com'),
   MAIL_IMAP_PORT: PortSchema.default(993),
   MAIL_IMAP_ACCOUNT_CONCURRENCY: ImapConcurrencySchema.default(2),
-  MAIL_SMTP_HOST: z.string().min(1).default('smtp.qiye.aliyun.com'),
+  MAIL_SMTP_HOST: z.string().trim().refine(isHostnameOrIpv4, 'Invalid SMTP hostname or IPv4 address.').default('smtp.qiye.aliyun.com'),
   MAIL_SMTP_PORT: PortSchema.default(465),
   MAIL_SMTP_SECURITY: SmtpSecuritySchema.default('tls'),
   MAIL_FROM_NAME: z.string().min(1).default('CAMPX'),
@@ -99,18 +100,10 @@ export interface AppConfig extends MailRuntimeConfig {
   multiAccountSendConcurrency?: number;
 }
 
-function isSafeHost(value: string): boolean {
-  return value.length <= 253 &&
-    /^[A-Za-z0-9.-]+$/.test(value) &&
-    !value.includes('..') &&
-    !value.startsWith('.') &&
-    !value.endsWith('.');
-}
-
 function parseList(value?: string): string[] | undefined {
   if (!value) return undefined;
   const values = [...new Set(value.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean))];
-  if (values.some((host) => !isSafeHost(host))) {
+  if (values.some((host) => !isHostnameOrIpv4(host))) {
     throw new Error('CONNECTOR_ALLOWED_HOSTS must contain only hostnames or IPv4 addresses without schemes, ports, paths, or wildcards.');
   }
   return values.length ? values : undefined;
@@ -215,13 +208,13 @@ function buildAccount(
     messageRefSecret,
     imap: {
       ...base.imap,
-      host: env[prefix + 'IMAP_HOST']?.trim() || base.imap.host,
+      host: z.string().trim().refine(isHostnameOrIpv4, 'Invalid IMAP hostname or IPv4 address.').parse(env[prefix + 'IMAP_HOST']?.trim() || base.imap.host),
       port: PortSchema.parse(env[prefix + 'IMAP_PORT'] ?? base.imap.port)
     },
     smtp: {
       ...base.smtp,
       ...smtpSecurity(security),
-      host: env[prefix + 'SMTP_HOST']?.trim() || base.smtp.host,
+      host: z.string().trim().refine(isHostnameOrIpv4, 'Invalid SMTP hostname or IPv4 address.').parse(env[prefix + 'SMTP_HOST']?.trim() || base.smtp.host),
       port: PortSchema.parse(env[prefix + 'SMTP_PORT'] ?? base.smtp.port)
     }
   };
