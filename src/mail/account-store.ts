@@ -164,7 +164,6 @@ export class EncryptedAccountStore {
       if (document.accounts.length >= this.maxAccounts) throw new Error('Mailbox Manager account limit reached.');
       document.accounts.push(stored);
     }
-    document.defaultAccount ??= account.id;
     await this.writeDocument(document);
   }
 
@@ -177,7 +176,6 @@ export class EncryptedAccountStore {
 
   async setDefault(id: string): Promise<void> {
     const document = await this.readDocument();
-    if (!document.accounts.some((account) => account.id === id)) throw new Error('Managed account was not found.');
     document.defaultAccount = id;
     await this.writeDocument(document);
   }
