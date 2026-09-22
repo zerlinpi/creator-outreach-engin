@@ -23,7 +23,7 @@ describe('Mailbox Manager admin UI', () => {
     const config = loadConfig({
       CONNECTOR_AUTH_TOKEN: '1234567890abcdef1234567890abcdef',
       CONNECTOR_ALLOWED_HOSTS: '127.0.0.1',
-      MAIL_ADMIN_PASSWORD: 'admin-password-1234',
+      MAIL_ADMIN_PASSWORD: 'admin-password:1234',
       MAIL_ACCOUNT_STORE_KEY: '0123456789abcdef0123456789abcdef',
       MAIL_ACCOUNT_STORE_PATH: join(dir, 'accounts.json')
     });
@@ -42,7 +42,7 @@ describe('Mailbox Manager admin UI', () => {
     await once(server, 'listening');
     const { port } = server.address() as AddressInfo;
     const root = 'http://127.0.0.1:' + port;
-    const auth = 'Basic ' + Buffer.from('admin:admin-password-1234').toString('base64');
+    const auth = 'Basic ' + Buffer.from('admin:admin-password:1234').toString('base64');
 
     expect((await fetch(root + '/favicon.ico')).status).toBe(204);
     expect((await fetch(root + '/admin')).status).toBe(401);
