@@ -94,5 +94,16 @@ describe('Mailbox Manager admin UI', () => {
     const listing = await (await fetch(root + '/admin/api/accounts', { headers: { authorization: auth } })).json() as any;
     expect(listing.accounts[0]).toMatchObject({ id: 'brand10', source: 'ui', username: 'mail@brand10.example' });
     expect(JSON.stringify(listing)).not.toContain('mailbox-secret');
+
+    for (let index = 0; index < 10; index += 1) {
+      await fetch(root + '/admin', { headers: { 'x-forwarded-for': '203.0.113.10' } });
+    }
+    const isolatedClient = await fetch(root + '/admin', {
+      headers: {
+        authorization: auth,
+        'x-forwarded-for': '203.0.113.11'
+      }
+    });
+    expect(isolatedClient.status).toBe(200);
   });
 });
