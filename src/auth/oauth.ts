@@ -45,6 +45,7 @@ const SUPPORTED_SCOPES = ['mcp:mail', 'offline_access'] as const;
 const ACCESS_TOKEN_TTL_SECONDS = 60 * 60;
 const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 const AUTHORIZATION_TTL_MS = 10 * 60 * 1000;
+const MAX_CLIENT_ID_CHARS = 4096;
 const MAX_PENDING_AUTHORIZATIONS = 500;
 const MAX_PENDING_AUTHORIZATIONS_PER_CLIENT = 10;
 const MAX_AUTHORIZATION_CODES = 500;
@@ -79,7 +80,7 @@ function encodeClient(client: RegisteredClient, secret: string): string {
 }
 
 function decodeClient(clientId: string, secret: string): RegisteredClient | null {
-  if (!clientId.startsWith('mcp.') || clientId.length > 32_768) return null;
+  if (!clientId.startsWith('mcp.') || clientId.length > MAX_CLIENT_ID_CHARS) return null;
   const client = verifyPayload<RegisteredClient>(clientId.slice(4), secret);
   if (
     !client ||
@@ -128,12 +129,17 @@ function escapeHtml(value: string): string {
   })[char] ?? char);
 }
 
+function clientBinding(clientId: string): string {
+  return createHash('sha256').update(clientId).digest('base64url');
+}
+
 function tokenResponse(config: OAuthConfig, clientId: string, scope: string) {
   const now = Math.floor(Date.now() / 1000);
+  const boundClientId = clientBinding(clientId);
   const audience = `${config.issuer}/mcp`;
   const accessPayload: SignedTokenPayload = {
     typ: 'access',
-    cid: clientId,
+    cid: boundClientId,
     aud: audience,
     scope,
     iat: now,
@@ -141,7 +147,7 @@ function tokenResponse(config: OAuthConfig, clientId: string, scope: string) {
   };
   const refreshPayload: SignedTokenPayload = {
     typ: 'refresh',
-    cid: clientId,
+    cid: boundClientId,
     aud: audience,
     scope,
     iat: now,
@@ -239,6 +245,9 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
       ? req.body.client_name.trim().slice(0, 128)
       : 'MCP client';
     const clientId = encodeClient({ redirectUris: redirectUris as string[], name }, config.signingSecret);
+    if (clientId.length > MAX_CLIENT_ID_CHARS) {
+      return res.status(400).json({ error: 'invalid_client_metadata' });
+    }
     return res.status(201).json({
       client_id: clientId,
       client_name: name,
@@ -407,7 +416,7 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
       const payload = verifySignedToken(refreshToken, 'or.', 'refresh', config);
       if (
         !payload ||
-        payload.cid !== clientId ||
+        (payload.cid !== clientBinding(clientId) && payload.cid !== clientId) ||
         !payload.jti ||
         !payload.scope.split(/\s+/).includes('offline_access') ||
         usedRefreshTokens.has(payload.jti)
