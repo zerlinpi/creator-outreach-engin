@@ -327,12 +327,17 @@ export function registerMailTools(
         if (!hasPerMessageAccount) {
           const runtime = accounts.resolve(account);
           const cleanMessages: OutgoingMessage[] = messages.map(({ account: _account, ...message }) => message);
-          if (dry_run) return result(preflightBatch(cleanMessages, options));
+          const withAccount = <T extends object>(items: T[]) => items.map((item) => ({
+            ...item,
+            account: runtime.id,
+            accountAddress: runtime.address
+          }));
+          if (dry_run) return result(withAccount(preflightBatch(cleanMessages, options)));
           const payload = { account: runtime.id, messages: cleanMessages, options };
           return result(await idempotency.execute(
             scopedKey(runtime.id, 'send_email_batch', idempotency_key!),
             payload,
-            () => executeBatch(cleanMessages, (message) => runtime.smtp.send(message), options)
+            async () => withAccount(await executeBatch(cleanMessages, (message) => runtime.smtp.send(message), options))
           ));
         }
 
