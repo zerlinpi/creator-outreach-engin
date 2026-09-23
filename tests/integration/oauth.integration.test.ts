@@ -77,6 +77,21 @@ function signedRefreshToken(issuer: string, signingSecret: string, clientId: str
 }
 
 describe('OAuth authorization surface', () => {
+  it('enforces the dedicated 32 KiB OAuth registration body limit', async () => {
+    const { baseUrl } = await startOAuthApp();
+    const response = await fetch(`${baseUrl}/oauth/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        client_name: 'Oversized registration',
+        redirect_uris: ['https://chatgpt.com/aip/callback'],
+        token_endpoint_auth_method: 'none',
+        padding: 'x'.repeat(40 * 1024)
+      })
+    });
+    expect(response.status).toBe(413);
+  });
+
   it('publishes discovery metadata and advertises the protected resource on 401', async () => {
     const { baseUrl, oauth } = await startOAuthApp();
 
