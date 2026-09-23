@@ -38,6 +38,13 @@ export interface EmailView {
   html?: string;
 }
 
+const MAX_TOOL_BODY_CHARS = 100_000;
+
+function truncateForTool(value: string, max = MAX_TOOL_BODY_CHARS): { value: string; truncated: boolean } {
+  if (value.length <= max) return { value, truncated: false };
+  return { value: value.slice(0, max) + '…', truncated: true };
+}
+
 function compactWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
@@ -75,6 +82,10 @@ export function toSearchSummary(message: NormalizedMessage): SearchEmailSummary 
 }
 
 export function toEmailView(message: NormalizedMessage, includeHtml = false): EmailView {
+  const text = truncateForTool(message.text);
+  let html: { value: string; truncated: boolean } | undefined;
+  if (includeHtml && message.html) html = truncateForTool(sanitizeHtmlForTool(message.html));
+
   const view: EmailView = {
     id: message.id,
     account: message.account,
@@ -86,16 +97,16 @@ export function toEmailView(message: NormalizedMessage, includeHtml = false): Em
     cc: message.cc,
     subject: message.subject,
     date: message.date,
-    text: message.text,
+    text: text.value,
     messageId: message.messageId,
     inReplyTo: message.inReplyTo,
     references: message.references,
     attachments: message.attachments,
     unread: message.unread ?? false,
     externalContent: true,
-    truncated: message.truncated ?? false
+    truncated: Boolean(message.truncated || text.truncated || html?.truncated)
   };
 
-  if (includeHtml && message.html) view.html = sanitizeHtmlForTool(message.html);
+  if (html) view.html = html.value;
   return view;
 }
