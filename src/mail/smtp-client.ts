@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import type { SendMailOptions } from 'nodemailer';
 import type { MailRuntimeConfig } from '../config.js';
+import { AsyncSemaphore } from '../concurrency.js';
 import { ConnectorError } from '../errors.js';
 import { normalizeAddress, validateAddressList } from './addresses.js';
 import type { OutgoingMessage, SendResult } from './types.js';
@@ -65,21 +66,16 @@ function classifySmtpError(error: unknown): ConnectorError {
 
 export class SmtpMailClient {
   private readonly transport: MailTransport;
-  private sendTail: Promise<void> = Promise.resolve();
+  private readonly sendLimiter: AsyncSemaphore;
   private enabled = true;
 
   constructor(private readonly config: MailRuntimeConfig, transport?: MailTransport) {
     this.transport = transport ?? (nodemailer.createTransport(buildSmtpTransportOptions(config)) as MailTransport);
+    this.sendLimiter = new AsyncSemaphore(config.smtp.maxConcurrency ?? 1, 100);
   }
 
   disable(): void {
     this.enabled = false;
-  }
-
-  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
-    const run = this.sendTail.then(operation, operation);
-    this.sendTail = run.then(() => undefined, () => undefined);
-    return run;
   }
 
   async verifyConnection(): Promise<boolean> {
@@ -95,7 +91,7 @@ export class SmtpMailClient {
   }
 
   send(message: OutgoingMessage): Promise<SendResult> {
-    return this.enqueue(async () => {
+    return this.sendLimiter.run(async () => {
       if (!this.enabled) throw new ConnectorError('ACCOUNT_NOT_FOUND', 'Mail account configuration changed or was removed.');
       const to = validateAddressList(message.to);
       const cc = optionalAddresses(message.cc);
