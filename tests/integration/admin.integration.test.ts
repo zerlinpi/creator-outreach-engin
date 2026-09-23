@@ -191,6 +191,16 @@ describe('Mailbox Manager admin UI', () => {
       })
     });
     expect(created.status).toBe(201);
+    expect((await store.loadAll(config)).defaultAccount).toBe('brand10');
+
+    const invalidDefault = await fetch(root + '/admin/api/default', {
+      method: 'POST',
+      headers: { authorization: auth, 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'missing' })
+    });
+    expect(invalidDefault.status).toBe(400);
+    expect(registry.defaultAccountId).toBe('brand10');
+    expect((await store.loadAll(config)).defaultAccount).toBe('brand10');
 
     const crossOrigin = await fetch(root + '/admin/api/default', {
       method: 'POST',
