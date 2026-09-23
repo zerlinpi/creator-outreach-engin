@@ -144,6 +144,27 @@ describe('OAuth authorization surface', () => {
     expect(response.status).toBe(400);
   });
 
+  it('rejects authorization requests that omit the required mcp:mail scope', async () => {
+    const { baseUrl } = await startOAuthApp();
+    const redirectUri = 'https://chatgpt.com/aip/callback';
+    const registration = await fetch(`${baseUrl}/oauth/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ client_name: 'Scope test', redirect_uris: [redirectUri], token_endpoint_auth_method: 'none' })
+    });
+    const registered = await registration.json() as { client_id: string };
+    const challenge = createHash('sha256').update('A'.repeat(64)).digest('base64url');
+    const authorizeUrl = new URL(`${baseUrl}/oauth/authorize`);
+    authorizeUrl.searchParams.set('response_type', 'code');
+    authorizeUrl.searchParams.set('client_id', registered.client_id);
+    authorizeUrl.searchParams.set('redirect_uri', redirectUri);
+    authorizeUrl.searchParams.set('scope', 'offline_access');
+    authorizeUrl.searchParams.set('code_challenge', challenge);
+    authorizeUrl.searchParams.set('code_challenge_method', 'S256');
+    const response = await fetch(authorizeUrl);
+    expect(response.status).toBe(400);
+  });
+
   it('bounds pending authorization requests per client IP', async () => {
     const { baseUrl } = await startOAuthApp();
     const redirectUri = 'https://chatgpt.com/aip/callback';
