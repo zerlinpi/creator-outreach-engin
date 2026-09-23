@@ -26,7 +26,7 @@ location / {
 Deny deployment files before any static-file rule:
 
 ```nginx
-location ~ ^/(?:\.env(?:\.|$)|\.git(?:/|$)|package(?:-lock)?\.json$|data(?:/|$)) {
+location ~ ^/(?:\.env(?:\.|$)|\.git(?:/|$)|package(?:-lock)?\.json$|data(?:/|$)|src(?:/|$)|tests(?:/|$)|scripts(?:/|$)|tsconfig(?:\.[^/]+)?\.json$|Dockerfile$) {
     deny all;
     return 404;
 }
