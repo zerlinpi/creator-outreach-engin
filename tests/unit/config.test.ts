@@ -12,6 +12,22 @@ describe('loadConfig', () => {
     expect(() => loadConfig({})).toThrow();
   });
 
+  it('fails closed on partial legacy mailbox credentials', () => {
+    expect(() => loadConfig({
+      CONNECTOR_AUTH_TOKEN: 'test-token-1234567890-abcdef-xyz',
+      MAIL_USERNAME: 'campx@example.com',
+      MAIL_ADMIN_PASSWORD: 'admin-password-1234',
+      MAIL_ACCOUNT_STORE_KEY: '0123456789abcdef0123456789abcdef'
+    })).toThrow(/MAIL_USERNAME and MAIL_APP_PASSWORD/);
+
+    expect(() => loadConfig({
+      CONNECTOR_AUTH_TOKEN: 'test-token-1234567890-abcdef-xyz',
+      MAIL_APP_PASSWORD: 'app-password',
+      MAIL_ADMIN_PASSWORD: 'admin-password-1234',
+      MAIL_ACCOUNT_STORE_KEY: '0123456789abcdef0123456789abcdef'
+    })).toThrow(/MAIL_USERNAME and MAIL_APP_PASSWORD/);
+  });
+
   it('rejects connector tokens shorter than 32 characters', () => {
     expect(() => loadConfig({ ...baseEnv, CONNECTOR_AUTH_TOKEN: 'too-short-token' })).toThrow();
   });
