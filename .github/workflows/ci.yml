@@ -64,6 +64,13 @@ jobs:
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:3100/admin/app.js)" = "401"
           curl --fail --silent --user admin:admin-password-1234 http://127.0.0.1:3100/admin/app.js | grep 'cards.replaceChildren'
           DEPLOY_BASE_URL=http://127.0.0.1:3100 npm run probe
+          set +e
+          timeout 5s node dist/src/server.js >"${RUNNER_TEMP}/port-conflict.log" 2>&1
+          CONFLICT_EXIT=$?
+          set -e
+          test "${CONFLICT_EXIT}" -ne 0
+          test "${CONFLICT_EXIT}" -ne 124
+          grep -E 'EADDRINUSE|address already in use' "${RUNNER_TEMP}/port-conflict.log"
           kill "${SERVER_PID}"
           wait "${SERVER_PID}" || true
           trap - EXIT
