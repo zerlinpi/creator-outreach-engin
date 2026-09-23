@@ -220,6 +220,20 @@ describe('single-replica limit and capacity verification', () => {
     }
   });
 
+  it('rejects unauthenticated oversized MCP requests before buffering the JSON body', async () => {
+    const { transport, endpoint } = await openClient({ jsonLimit: '32kb' });
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ padding: 'x'.repeat(40 * 1024) })
+      });
+      expect(response.status).toBe(401);
+    } finally {
+      await transport.terminateSession().catch(() => undefined);
+    }
+  });
+
   it('returns HTTP 413 before MCP handling when the JSON request body exceeds the configured cap', async () => {
     const { transport, endpoint } = await openClient({ jsonLimit: '32kb' });
     try {
