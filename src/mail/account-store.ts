@@ -151,8 +151,9 @@ export class EncryptedAccountStore {
 
   private async writeDocument(document: StoreDocument): Promise<void> {
     const directory = dirname(this.filePath);
+    // mkdir's mode applies only to newly created directories. Never chmod an existing
+    // parent such as /tmp or an operator-managed shared directory.
     await mkdir(directory, { recursive: true, mode: 0o700 });
-    if (directory !== '.') await chmod(directory, 0o700);
     const temp = this.filePath + '.tmp';
     await writeFile(temp, JSON.stringify(document, null, 2), { encoding: 'utf8', mode: 0o600 });
     await chmod(temp, 0o600);
