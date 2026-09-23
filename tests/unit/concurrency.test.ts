@@ -20,6 +20,19 @@ describe('bounded concurrency primitives', () => {
     expect(results).toEqual(Array.from({ length: 12 }, (_, index) => index * 2));
   });
 
+  it('fails closed when the wait queue reaches its configured bound', async () => {
+    const semaphore = new AsyncSemaphore(1, 1);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+
+    const active = semaphore.run(async () => { await gate; });
+    const queued = semaphore.run(async () => undefined);
+    await expect(semaphore.run(async () => undefined)).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+
+    release();
+    await Promise.all([active, queued]);
+  });
+
   it('serializes operations when semaphore limit is one', async () => {
     const semaphore = new AsyncSemaphore(1);
     const order: string[] = [];
