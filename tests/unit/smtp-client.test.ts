@@ -124,6 +124,27 @@ describe('SMTP adapter', () => {
     }
   });
 
+  it('fails closed when too many SMTP sends are queued for one mailbox', async () => {
+    let calls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const transport = {
+      async sendMail() {
+        calls += 1;
+        if (calls === 1) await gate;
+        return { accepted: ['creator@example.com'], rejected: [], messageId: '<queued@example.com>' };
+      }
+    };
+    const client = new SmtpMailClient(config, transport);
+    const queued = Array.from({ length: 101 }, () =>
+      client.send({ to: ['creator@example.com'], subject: 'CAMPX', text: 'Hello' })
+    );
+    await expect(client.send({ to: ['creator@example.com'], subject: 'CAMPX overflow', text: 'Hello' }))
+      .rejects.toMatchObject({ code: 'RATE_LIMITED' });
+    release();
+    await expect(Promise.all(queued)).resolves.toHaveLength(101);
+  });
+
   it('verifies SMTP authentication without sending a message', async () => {
     let verified = 0;
     const transport = {
