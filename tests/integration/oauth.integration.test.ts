@@ -61,6 +61,21 @@ function signedAccessToken(issuer: string, signingSecret: string, scope: string)
   return 'oa.' + body + '.' + signature;
 }
 
+function signedRefreshToken(issuer: string, signingSecret: string, clientId: string, scope: string): string {
+  const now = Math.floor(Date.now() / 1000);
+  const body = Buffer.from(JSON.stringify({
+    typ: 'refresh',
+    cid: clientId,
+    aud: issuer + '/mcp',
+    scope,
+    iat: now,
+    exp: now + 3600,
+    jti: 'legacy-refresh-test'
+  }), 'utf8').toString('base64url');
+  const signature = createHmac('sha256', signingSecret).update(body).digest('base64url');
+  return 'or.' + body + '.' + signature;
+}
+
 describe('OAuth authorization surface', () => {
   it('publishes discovery metadata and advertises the protected resource on 401', async () => {
     const { baseUrl, oauth } = await startOAuthApp();
@@ -104,6 +119,29 @@ describe('OAuth authorization surface', () => {
       body: '{}'
     });
     expect(response.status).toBe(401);
+  });
+
+  it('rejects legacy refresh tokens whose scope did not include offline_access', async () => {
+    const { baseUrl, oauth } = await startOAuthApp();
+    const redirectUri = 'https://chatgpt.com/aip/callback';
+    const registration = await fetch(`${baseUrl}/oauth/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ client_name: 'Legacy refresh test', redirect_uris: [redirectUri], token_endpoint_auth_method: 'none' })
+    });
+    const registered = await registration.json() as { client_id: string };
+    const legacy = signedRefreshToken(oauth.issuer, oauth.signingSecret, registered.client_id, 'mcp:mail');
+
+    const response = await fetch(`${baseUrl}/oauth/token`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        client_id: registered.client_id,
+        refresh_token: legacy
+      })
+    });
+    expect(response.status).toBe(400);
   });
 
   it('bounds pending authorization requests per client IP', async () => {
