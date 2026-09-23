@@ -49,6 +49,12 @@ jobs:
           export MAIL_ACCOUNT_STORE_PATH="${RUNNER_TEMP}/mail-accounts.json"
           export PORT=3100
           npm run preflight:native
+          set +e
+          NODE_ENV=development npm run preflight:native >"${RUNNER_TEMP}/native-preflight-dev.log" 2>&1
+          PREFLIGHT_DEV_EXIT=$?
+          set -e
+          test "${PREFLIGHT_DEV_EXIT}" -ne 0
+          grep 'NODE_ENV must be production' "${RUNNER_TEMP}/native-preflight-dev.log"
           node dist/src/server.js >"${RUNNER_TEMP}/server.log" 2>&1 &
           SERVER_PID=$!
           trap 'kill "${SERVER_PID}" 2>/dev/null || true' EXIT
