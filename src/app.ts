@@ -1,5 +1,6 @@
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
-import { createMcpExpressApp } from '@modelcontextprotocol/express';
+import { hostHeaderValidation } from '@modelcontextprotocol/express';
+import express from 'express';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import { AsyncSemaphore } from './concurrency.js';
 import { isAuthorized } from './auth/bearer.js';
@@ -67,11 +68,8 @@ export function createHttpApp(deps: HttpAppDependencies) {
     return server;
   });
 
-  const app = createMcpExpressApp({
-    host: '0.0.0.0',
-    allowedHosts: deps.allowedHosts,
-    jsonLimit: deps.jsonLimit ?? '1mb'
-  });
+  const app = express();
+  if (deps.allowedHosts?.length) app.use(hostHeaderValidation(deps.allowedHosts));
   // Trust forwarding headers only when the immediate proxy is loopback (for example local Nginx).
   app.set('trust proxy', 'loopback');
 
@@ -102,6 +100,10 @@ export function createHttpApp(deps: HttpAppDependencies) {
     }
     next();
   });
+  // Parse MCP JSON only after authentication so rejected callers cannot force
+  // the server to buffer request bodies. OAuth and admin routes use smaller,
+  // route-specific parsers.
+  app.use('/mcp', express.json({ limit: deps.jsonLimit ?? '1mb' }));
 
   const nodeHandler = toNodeHandler(handler);
   app.all('/mcp', (req, res) => void nodeHandler(req, res, req.body));
