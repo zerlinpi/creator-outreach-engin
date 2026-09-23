@@ -63,6 +63,14 @@ describe('EncryptedAccountStore', () => {
     expect(new Set(loaded.accounts.map((account) => account.id)).size).toBe(20);
   });
 
+  it('rejects an unexpectedly large encrypted store before parsing it', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'mail-store-')); dirs.push(dir);
+    const path = join(dir, 'accounts.json');
+    await writeFile(path, 'x'.repeat(4 * 1024 * 1024 + 1));
+    const store = new EncryptedAccountStore(path, '0123456789abcdef0123456789abcdef', 10);
+    await expect(store.loadAll(base())).rejects.toThrow(/unexpectedly large/);
+  });
+
   it('rejects malformed or duplicate persisted mailbox records before runtime use', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'mail-store-')); dirs.push(dir);
     const path = join(dir, 'accounts.json');
