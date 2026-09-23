@@ -255,9 +255,17 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
     const codeChallenge = typeof req.query.code_challenge === 'string' ? req.query.code_challenge : '';
     const codeChallengeMethod = req.query.code_challenge_method;
     const scope = normalizeScope(req.query.scope);
-    const state = typeof req.query.state === 'string' && req.query.state.length <= 1024 ? req.query.state : undefined;
+    const rawState = req.query.state;
+    const state = typeof rawState === 'string' ? rawState : undefined;
 
-    if (responseType !== 'code' || !client || !redirectUri || !client.redirectUris.includes(redirectUri) || !scope) {
+    if (
+      responseType !== 'code' ||
+      !client ||
+      !redirectUri ||
+      !client.redirectUris.includes(redirectUri) ||
+      !scope ||
+      (rawState !== undefined && (typeof rawState !== 'string' || rawState.length > 1024))
+    ) {
       return res.status(400).send('Invalid OAuth authorization request.');
     }
     if (codeChallengeMethod !== 'S256' || !/^[A-Za-z0-9_-]{43,128}$/.test(codeChallenge)) {
