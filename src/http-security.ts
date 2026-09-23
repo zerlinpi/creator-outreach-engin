@@ -63,13 +63,18 @@ export function requestClientKey(req: Request): string {
   return req.ip || req.socket.remoteAddress || 'unknown';
 }
 
-export function applySensitiveHeaders(res: Response): void {
+interface SensitiveHeaderOptions {
+  formActionOrigins?: readonly string[];
+}
+
+export function applySensitiveHeaders(res: Response, options: SensitiveHeaderOptions = {}): void {
+  const formAction = ["'self'", ...(options.formActionOrigins ?? [])].join(' ');
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'");
+  res.setHeader('Content-Security-Policy', `default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action ${formAction}; script-src 'self'; style-src 'self' 'unsafe-inline'`);
 }
 
 export function isSameOriginMutation(req: Request): boolean {
