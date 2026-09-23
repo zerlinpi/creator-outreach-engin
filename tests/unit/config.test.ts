@@ -134,6 +134,18 @@ describe('loadConfig', () => {
     });
   });
 
+  it('bounds environment-managed mailbox account lists', () => {
+    expect(() => loadConfig({
+      CONNECTOR_AUTH_TOKEN: 'test-token-1234567890-abcdef-xyz',
+      MAIL_ACCOUNTS: ',,,'
+    })).toThrow(/at least one valid account id/);
+
+    expect(() => loadConfig({
+      CONNECTOR_AUTH_TOKEN: 'test-token-1234567890-abcdef-xyz',
+      MAIL_ACCOUNTS: Array.from({ length: 101 }, (_, index) => 'brand' + index).join(',')
+    })).toThrow(/at most 100 account ids/);
+  });
+
   it('fails closed for incomplete or ambiguous multi-mailbox configuration', () => {
     const shared = {
       CONNECTOR_AUTH_TOKEN: 'test-token-1234567890-abcdef-xyz',
