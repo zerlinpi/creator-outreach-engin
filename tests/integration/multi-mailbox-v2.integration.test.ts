@@ -82,6 +82,22 @@ describe('AI multi-mailbox clarity', () => {
       expect(a.sent.map((m) => m.subject)).toEqual(['A1', 'A2']);
       expect(b.sent.map((m) => m.subject)).toEqual(['B1']);
 
+      const invalidPreflight = await client.callTool({
+        name: 'send_email_batch',
+        arguments: {
+          idempotency_key: 'multi-account-batch-preflight-001',
+          delay_ms: 0,
+          messages: [
+            { account: 'a', to: ['safe@example.com'], subject: 'Safe A', text: 'Must not send' },
+            { account: 'b', to: ['dup@example.com'], subject: 'Duplicate', text: 'One' },
+            { account: 'b', to: ['DUP@example.com'], subject: 'Duplicate', text: 'Two' }
+          ]
+        }
+      });
+      expect(invalidPreflight.isError).toBe(true);
+      expect(a.sent.map((m) => m.subject)).toEqual(['A1', 'A2']);
+      expect(b.sent.map((m) => m.subject)).toEqual(['B1']);
+
       const invalid = await client.callTool({
         name: 'send_email_batch',
         arguments: {
