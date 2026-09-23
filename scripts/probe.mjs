@@ -64,8 +64,8 @@ if (process.env.OAUTH_ISSUER) {
 
 for (const sensitivePath of ['/.env', '/.git/config', '/package.json', '/data/mail-accounts.enc.json']) {
   const response = await request(sensitivePath);
-  if (response && response.status >= 200 && response.status < 300) {
-    failures.push(sensitivePath + ': sensitive deployment path is publicly readable');
+  if (response && response.status < 400) {
+    failures.push(sensitivePath + ': sensitive deployment path is publicly reachable (HTTP ' + response.status + ')');
   }
 }
 
