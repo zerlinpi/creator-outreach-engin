@@ -308,6 +308,8 @@ describe('OAuth authorization surface', () => {
     };
     expect(tokenBody.access_token).toMatch(/^oa\./);
     expect(tokenBody.refresh_token).toMatch(/^or\./);
+    expect(tokenBody.access_token.length).toBeLessThan(2048);
+    expect(tokenBody.refresh_token.length).toBeLessThan(2048);
     expect(tokenBody.expires_in).toBe(3600);
 
     const replay = await fetch(`${baseUrl}/oauth/token`, {
