@@ -48,6 +48,7 @@ jobs:
           export MAIL_ACCOUNT_STORE_KEY=0123456789abcdef0123456789abcdef
           export MAIL_ACCOUNT_STORE_PATH="${RUNNER_TEMP}/mail-accounts.json"
           export PORT=3100
+          npm run preflight:native
           node dist/src/server.js >"${RUNNER_TEMP}/server.log" 2>&1 &
           SERVER_PID=$!
           trap 'kill "${SERVER_PID}" 2>/dev/null || true' EXIT
