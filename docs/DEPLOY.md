@@ -14,6 +14,8 @@ node --version
 npm ci
 npm run verify
 cp -n .env.example .env
+# edit .env, then:
+npm run preflight:native
 ```
 
 Minimum production values to edit in `.env`:
@@ -48,6 +50,8 @@ npm start
 ```
 
 The expected startup log includes the bind host, port, and configured mailbox count. A fresh Mailbox Manager deployment may start with zero mailboxes.
+
+For aaPanel/BT Panel, PM2, systemd, working-directory requirements, file permissions, and native update steps, use `docs/NATIVE_DEPLOY.md`. The native preflight requires `NODE_ENV=production`, validates the compiled server/configuration, and checks that the Mailbox Manager data directory is writable by the actual service user.
 
 ### Docker behind same-host Nginx
 
