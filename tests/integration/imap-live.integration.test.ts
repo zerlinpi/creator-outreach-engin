@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { AppConfig } from '../../src/config.js';
 import { ImapMailClient } from '../../src/mail/imap-client.js';
 
-const enabled = Boolean(process.env.TEST_MAIL_USERNAME && process.env.TEST_MAIL_APP_PASSWORD);
+const enabled = Boolean(
+  process.env.TEST_MAIL_USERNAME &&
+  process.env.TEST_MAIL_APP_PASSWORD &&
+  process.env.TEST_MAIL_LIVE_READ === 'true'
+);
 
 function testConfig(): AppConfig {
   return {
