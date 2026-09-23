@@ -145,6 +145,9 @@ function parseOAuthConfig(parsed: z.infer<typeof EnvSchema>, allowedHosts?: stri
   if (issuerUrl.username || issuerUrl.password || issuerUrl.search || issuerUrl.hash || issuerUrl.pathname !== '/') {
     throw new Error('OAUTH_ISSUER must be an origin URL without credentials, path, query, or fragment.');
   }
+  if (!['http:', 'https:'].includes(issuerUrl.protocol)) {
+    throw new Error('OAUTH_ISSUER must use HTTP or HTTPS.');
+  }
   if (parsed.NODE_ENV === 'production' && issuerUrl.protocol !== 'https:') throw new Error('OAUTH_ISSUER must use HTTPS in production.');
   if (parsed.NODE_ENV === 'production' && allowedHosts && !allowedHosts.includes(issuerUrl.hostname.toLowerCase())) {
     throw new Error('OAUTH_ISSUER hostname must be present in CONNECTOR_ALLOWED_HOSTS.');
