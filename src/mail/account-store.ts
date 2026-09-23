@@ -13,11 +13,12 @@ const SenderNameSchema = z.string().trim().min(1).max(120).refine(
   (value) => !/[\r\n]/.test(value),
   'Sender name must not contain CR or LF characters.'
 );
+const PasswordSchema = z.string().min(1).max(4096);
 
 const AccountSchema = z.object({
   id: AccountIdSchema,
-  username: z.string().email(),
-  appPassword: z.string().min(1).max(4096),
+  username: z.string().max(320).email(),
+  appPassword: PasswordSchema,
   fromName: SenderNameSchema,
   imapHost: HostSchema,
   imapPort: z.number().int().min(1).max(65535),
@@ -55,12 +56,12 @@ interface StoreDocument {
 const EncryptedSecretSchema = z.object({
   iv: z.string().length(16).regex(/^[A-Za-z0-9_-]+$/),
   tag: z.string().length(22).regex(/^[A-Za-z0-9_-]+$/),
-  ciphertext: z.string().min(2).regex(/^[A-Za-z0-9_-]+$/)
+  ciphertext: z.string().min(2).max(16_384).regex(/^[A-Za-z0-9_-]+$/)
 });
 
 const StoredAccountSchema = z.object({
   id: AccountIdSchema,
-  username: z.string().email(),
+  username: z.string().max(320).email(),
   fromName: SenderNameSchema,
   imapHost: HostSchema,
   imapPort: z.number().int().min(1).max(65535),
@@ -115,7 +116,9 @@ function encrypt(password: string, secret: string): EncryptedSecret {
 function decrypt(value: EncryptedSecret, secret: string): string {
   const decipher = createDecipheriv('aes-256-gcm', keyFromSecret(secret), Buffer.from(value.iv, 'base64url'));
   decipher.setAuthTag(Buffer.from(value.tag, 'base64url'));
-  return Buffer.concat([decipher.update(Buffer.from(value.ciphertext, 'base64url')), decipher.final()]).toString('utf8');
+  return PasswordSchema.parse(
+    Buffer.concat([decipher.update(Buffer.from(value.ciphertext, 'base64url')), decipher.final()]).toString('utf8')
+  );
 }
 
 function smtpSecurity(value: 'tls' | 'starttls') {
