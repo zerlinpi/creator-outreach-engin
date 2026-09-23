@@ -96,6 +96,26 @@ describe('MCP write policy', () => {
     }
   });
 
+  it('rejects oversized outbound bodies before SMTP', async () => {
+    const { client, transport, sent } = await openClient();
+    try {
+      const response = await client.callTool({
+        name: 'send_email',
+        arguments: {
+          to: ['creator@example.com'],
+          subject: 'CAMPX',
+          text: 'x'.repeat(512_001),
+          idempotency_key: 'oversized-body-001'
+        }
+      });
+      expect(response.isError).toBe(true);
+      expect(sent).toHaveLength(0);
+    } finally {
+      await transport.terminateSession().catch(() => undefined);
+      await client.close();
+    }
+  });
+
   it('rejects CR/LF in outbound subjects before SMTP', async () => {
     const { client, transport, sent } = await openClient();
     try {
