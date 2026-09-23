@@ -77,7 +77,9 @@ export function isSameOriginMutation(req: Request): boolean {
   if (!origin) return true;
   try {
     const originUrl = new URL(origin);
-    return originUrl.host.toLowerCase() === (req.header('host') ?? '').toLowerCase();
+    const requestHost = (req.header('host') ?? '').toLowerCase();
+    const requestProtocol = req.protocol.toLowerCase() + ':';
+    return originUrl.host.toLowerCase() === requestHost && originUrl.protocol.toLowerCase() === requestProtocol;
   } catch {
     return false;
   }
