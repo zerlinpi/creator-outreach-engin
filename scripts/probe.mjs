@@ -62,7 +62,15 @@ if (process.env.OAUTH_ISSUER) {
   await expectStatus('/.well-known/oauth-authorization-server', 200);
 }
 
-for (const sensitivePath of ['/.env', '/.git/config', '/package.json', '/data/mail-accounts.enc.json']) {
+for (const sensitivePath of [
+  '/.env',
+  '/.env.bak',
+  '/.git/config',
+  '/package.json',
+  '/package-lock.json',
+  '/src/server.ts',
+  '/data/mail-accounts.enc.json'
+]) {
   const response = await request(sensitivePath);
   if (response && response.status < 400) {
     failures.push(sensitivePath + ': sensitive deployment path is publicly reachable (HTTP ' + response.status + ')');
