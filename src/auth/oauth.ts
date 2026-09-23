@@ -300,6 +300,7 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
 <h1>Authorize Creator Outreach Mail</h1>
 <p><strong>${escapeHtml(client.name)}</strong> is requesting access to the configured creator-outreach mailboxes.</p>
 <p>Requested scope: <code>${escapeHtml(scope)}</code></p>
+<p>Redirect destination: <code>${escapeHtml(redirectUri)}</code></p>
 <form method="post" action="/oauth/authorize">
 <input type="hidden" name="request_id" value="${escapeHtml(requestId)}">
 <label>Password<br><input type="password" name="password" required autocomplete="current-password" style="width:100%;padding:10px;margin:8px 0 16px"></label>
