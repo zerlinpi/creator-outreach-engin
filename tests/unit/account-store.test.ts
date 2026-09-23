@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -63,6 +63,25 @@ describe('EncryptedAccountStore', () => {
     const loaded = await store.loadAll(base());
     expect(loaded.accounts).toHaveLength(20);
     expect(new Set(loaded.accounts.map((account) => account.id)).size).toBe(20);
+  });
+
+  it('does not chmod an existing operator-managed parent directory', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'mail-store-parent-')); dirs.push(dir);
+    await chmod(dir, 0o755);
+    const path = join(dir, 'accounts.json');
+    const store = new EncryptedAccountStore(path, '0123456789abcdef0123456789abcdef', 10);
+    await store.upsert({
+      id: 'campx',
+      username: 'mail@campx.example',
+      appPassword: 'secret-password',
+      fromName: 'CAMPX',
+      imapHost: 'imap.example.com',
+      imapPort: 993,
+      smtpHost: 'smtp.example.com',
+      smtpPort: 465
+    });
+    expect((await stat(dir)).mode & 0o777).toBe(0o755);
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
   });
 
   it('rejects an unexpectedly large encrypted store before parsing it', async () => {
