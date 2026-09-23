@@ -103,8 +103,8 @@ describe('MCP write hardening', () => {
         }
       }));
       expect(preview).toEqual([
-        { index: 0, to: ['a@example.com'], cc: [], bcc: [], subject: 'CAMPX A', dryRun: true },
-        { index: 1, to: ['b@example.com'], cc: [], bcc: [], subject: 'CAMPX B', dryRun: true }
+        { index: 0, to: ['a@example.com'], cc: [], bcc: [], subject: 'CAMPX A', dryRun: true, account: 'default', accountAddress: 'campx@example.com' },
+        { index: 1, to: ['b@example.com'], cc: [], bcc: [], subject: 'CAMPX B', dryRun: true, account: 'default', accountAddress: 'campx@example.com' }
       ]);
       expect(JSON.stringify(preview)).not.toContain('Private body');
       expect(sent).toHaveLength(0);
