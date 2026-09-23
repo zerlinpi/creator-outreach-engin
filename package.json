@@ -18,7 +18,8 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "verify": "npm test && npm run typecheck && npm run build",
     "doctor:build": "npm run build --silent && npm run doctor --silent",
-    "probe": "node --env-file-if-exists=.env scripts/probe.mjs"
+    "probe": "node --env-file-if-exists=.env scripts/probe.mjs",
+    "probe:base": "node --env-file-if-exists=.env scripts/probe.mjs --allow-unready"
   },
   "dependencies": {
     "@modelcontextprotocol/express": "^2.0.0",
