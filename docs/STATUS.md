@@ -1,6 +1,6 @@
 # Creator Outreach Engine Status
 
-Last updated: 2026-09-22
+Last updated: 2026-09-23
 
 ## Current release target
 
@@ -27,6 +27,7 @@ v0.3.6 is the current production-hardening release for many-mailbox operation. T
 - OAuth PKCE, required `mcp:mail` scope, authorization/token throttling, bounded transient state, and rotating refresh tokens with in-process replay rejection.
 - Process liveness at `/health` and mailbox readiness at `/ready`.
 - Bounded JSON/message/batch/idempotency limits.
+- Native deployment preflight validates Node version, project working directory, production config, compiled server, and mailbox-store write permissions.
 - Non-root pinned-base Docker image and dependency audits in CI.
 - Repository-safe high-water tests for MCP reads, idempotency replays/capacity, batch ceilings, and request-size enforcement.
 
@@ -36,22 +37,23 @@ The idempotency store is process-local. Production should remain **single replic
 
 OAuth refresh-token replay tracking is also process-local. Token signatures remain valid across restarts, so durable refresh-token rotation/revocation requires a persistent token-state backend if that becomes a requirement.
 
-Mailbox Manager encrypted storage is file-based and is protected for one process. Persist `/app/data` and do not mount the same file writable from multiple replicas.
+Mailbox Manager encrypted storage is file-based and is protected for one process. Persist the configured `MAIL_ACCOUNT_STORE_PATH` (default `./data/mail-accounts.enc.json`) and do not share it writable across multiple processes.
 
 ## External verification still required
 
 Repository CI cannot prove provider-specific quotas or real credentials. Before creator outreach:
 
 1. deploy the exact green main commit as one replica behind HTTPS;
-2. persist `/app/data`;
-3. run `npm run doctor`;
-4. verify `/ready` returns 200;
-5. test every configured provider with owned inboxes;
-6. search all mailboxes and verify account identity on each result;
-7. verify ambiguous sends fail with `ACCOUNT_REQUIRED`;
-8. verify intentional cross-account replies fail with `ACCOUNT_MISMATCH`;
-9. verify Microsoft 365 accounts with STARTTLS when used;
-10. run controlled provider pacing only against owned recipients.
+2. run `npm run preflight:native` when deploying as native Node.js and confirm the service user can write the configured mailbox-store directory;
+3. persist the configured mailbox-store path;
+4. run `npm run doctor`;
+5. verify `/ready` returns 200;
+6. test every configured provider with owned inboxes;
+7. search all mailboxes and verify account identity on each result;
+8. verify ambiguous sends fail with `ACCOUNT_REQUIRED`;
+9. verify intentional cross-account replies fail with `ACCOUNT_MISMATCH`;
+10. verify Microsoft 365 accounts with STARTTLS when used;
+11. run controlled provider pacing only against owned recipients.
 
 ## Next architectural milestone
 
