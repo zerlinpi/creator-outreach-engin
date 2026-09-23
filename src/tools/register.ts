@@ -13,6 +13,7 @@ const MAX_QUERY_CHARS = 2048;
 const MAX_MAILBOX_CHARS = 1024;
 const MAX_MESSAGE_REF_CHARS = 4096;
 const MAX_BODY_CHARS = 512_000;
+const MAX_THREAD_MESSAGES = 50;
 const email = z.string().max(320).email();
 const accountId = z.string().regex(/^[a-z][a-z0-9_]{0,31}$/);
 const optionalAccountId = accountId.optional();
@@ -207,11 +208,13 @@ export function registerMailTools(
       try {
         const runtime = message_ref ? accounts.resolveForMessage(message_ref, account) : accounts.resolve(account);
         const thread = await runtime.imap.getThread({ messageRef: message_ref, participant, subject });
+        const visibleMessages = thread.messages.slice(-MAX_THREAD_MESSAGES);
         return result({
           account: runtime.id,
           accountAddress: runtime.address,
           heuristic: thread.heuristic,
-          messages: thread.messages.map((message) => ({
+          threadTruncated: thread.messages.length > visibleMessages.length,
+          messages: visibleMessages.map((message) => ({
             ...toEmailView(message, include_html),
             account: runtime.id,
             accountAddress: runtime.address
