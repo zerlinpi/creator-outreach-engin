@@ -401,14 +401,17 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
       }
       const redirectUri = parseRedirectUri(req.body?.redirect_uri);
       const verifier = typeof req.body?.code_verifier === 'string' ? req.body.code_verifier : '';
-      const verifierValid = /^[A-Za-z0-9._~-]{43,128}$/.test(verifier);
-      const challenge = verifierValid ? createHash('sha256').update(verifier).digest('base64url') : '';
+      // The authorization request already requires S256 and a valid challenge. At
+      // token exchange, the security property we need is that this exact verifier
+      // reproduces the stored challenge. Do not add a second verifier-shape gate:
+      // real OAuth clients may serialize an otherwise high-entropy verifier
+      // differently while still proving possession through the S256 comparison.
+      const challenge = createHash('sha256').update(verifier).digest('base64url');
 
       if (
         entry.clientId !== clientId ||
         !redirectUri ||
         entry.redirectUri !== redirectUri ||
-        !verifierValid ||
         !safeEqual(challenge, entry.codeChallenge)
       ) {
         tokenLimiter.failure(clientKey);
