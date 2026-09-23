@@ -37,6 +37,19 @@ describe('mail tool presenters', () => {
     expect(summary).not.toHaveProperty('text');
   });
 
+  it('bounds full email body content returned to MCP clients', () => {
+    const oversized: NormalizedMessage = {
+      ...message,
+      text: 'x'.repeat(120_000),
+      html: '<p>' + 'y'.repeat(120_000) + '</p>',
+      truncated: false
+    };
+    const view = toEmailView(oversized, true);
+    expect(view.text.length).toBeLessThanOrEqual(100_001);
+    expect(view.html!.length).toBeLessThanOrEqual(100_001);
+    expect(view.truncated).toBe(true);
+  });
+
   it('exposes reply routing, truncation, omits HTML by default, and sanitizes HTML when explicitly requested', () => {
     const plain = toEmailView(message, false);
     expect(plain.replyTo).toEqual(['partnerships@agency.example']);
