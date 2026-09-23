@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { z } from 'zod';
 import type { MailAccountConfig, MailRuntimeConfig } from '../config.js';
@@ -147,10 +147,14 @@ export class EncryptedAccountStore {
   }
 
   private async writeDocument(document: StoreDocument): Promise<void> {
-    await mkdir(dirname(this.filePath), { recursive: true, mode: 0o700 });
+    const directory = dirname(this.filePath);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    await chmod(directory, 0o700);
     const temp = this.filePath + '.tmp';
     await writeFile(temp, JSON.stringify(document, null, 2), { encoding: 'utf8', mode: 0o600 });
+    await chmod(temp, 0o600);
     await rename(temp, this.filePath);
+    await chmod(this.filePath, 0o600);
   }
 
   private mutate<T>(operation: () => Promise<T>): Promise<T> {
