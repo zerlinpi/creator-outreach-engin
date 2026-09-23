@@ -116,6 +116,8 @@ function parseList(value?: string): string[] | undefined {
 function parseAccountIds(value?: string): string[] {
   if (!value?.trim()) return [];
   const raw = value.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
+  if (raw.length === 0) throw new Error('MAIL_ACCOUNTS must contain at least one valid account id when set.');
+  if (raw.length > 100) throw new Error('MAIL_ACCOUNTS supports at most 100 account ids.');
   const unique = [...new Set(raw)];
   if (unique.length !== raw.length) throw new Error('MAIL_ACCOUNTS must not contain duplicate account ids.');
   return unique.map((id) => AccountIdSchema.parse(id));
