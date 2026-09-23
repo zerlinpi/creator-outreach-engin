@@ -207,6 +207,15 @@ describe('loadConfig', () => {
     });
   });
 
+  it('rejects non-HTTP OAuth issuer schemes in every environment', () => {
+    expect(() => loadConfig({
+      ...baseEnv,
+      OAUTH_ISSUER: 'ftp://domail.campxusainc.com',
+      OAUTH_LOGIN_PASSWORD: 'oauth-login-password-123',
+      OAUTH_SIGNING_SECRET: 'oauth-signing-secret-1234567890-abcdef'
+    })).toThrow(/HTTP or HTTPS/);
+  });
+
   it('requires HTTPS and an allowed issuer host for production OAuth', () => {
     const oauth = {
       OAUTH_LOGIN_PASSWORD: 'oauth-login-password-123',
