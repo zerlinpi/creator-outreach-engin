@@ -198,6 +198,27 @@ describe('remote MCP HTTP surface', () => {
     }
   });
 
+  it('preserves the default in-memory idempotency behavior when no custom backend is configured', async () => {
+    const { client, transport, sent } = await openClient();
+    try {
+      const args = {
+        to: ['creator@example.com'],
+        subject: 'Compatibility check',
+        text: 'Existing default behavior must remain unchanged.',
+        idempotency_key: 'compat-default-store-001'
+      };
+      const first = jsonText(await client.callTool({ name: 'send_email', arguments: args }));
+      const replay = jsonText(await client.callTool({ name: 'send_email', arguments: args }));
+
+      expect(first).toEqual(replay);
+      expect(first).toMatchObject({ account: 'default', accepted: ['creator@example.com'] });
+      expect(sent).toHaveLength(1);
+    } finally {
+      await transport.terminateSession().catch(() => undefined);
+      await client.close();
+    }
+  });
+
   it('sends, replies, follows up from Sent, and batch-sends as separate messages', async () => {
     const { client, transport, sent } = await openClient();
     try {

@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod/v4';
 import { AsyncSemaphore, mapWithConcurrency } from '../concurrency.js';
 import type { MailAccountRegistry } from '../mail/accounts.js';
-import type { IdempotencyStore } from '../mail/idempotency.js';
+import type { IdempotencyExecutor } from '../mail/idempotency.js';
 import { buildReplyMessage } from '../mail/reply.js';
 import { executeBatch, preflightBatch } from '../mail/batch.js';
 import { toEmailView, toSearchSummary } from '../mail/presenters.js';
@@ -39,7 +39,7 @@ export interface MailToolOptions {
 export function registerMailTools(
   server: McpServer,
   accounts: MailAccountRegistry,
-  idempotency: IdempotencyStore,
+  idempotency: IdempotencyExecutor,
   toolOptions: MailToolOptions = {}
 ) {
   const allAccountReadConcurrency = toolOptions.allAccountReadConcurrency ?? 4;
