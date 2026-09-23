@@ -202,6 +202,17 @@ describe('Mailbox Manager admin UI', () => {
       body: JSON.stringify({ id: 'brand10' })
     });
     expect(crossOrigin.status).toBe(403);
+
+    const crossScheme = await fetch(root + '/admin/api/default', {
+      method: 'POST',
+      headers: {
+        authorization: auth,
+        origin: root.replace('http://', 'https://'),
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ id: 'brand10' })
+    });
+    expect(crossScheme.status).toBe(403);
     expect(registry.resolve('brand10').address).toBe('mail@brand10.example');
 
     const listing = await (await fetch(root + '/admin/api/accounts', { headers: { authorization: auth } })).json() as any;
