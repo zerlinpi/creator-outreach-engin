@@ -111,7 +111,7 @@ function normalizeScope(value: unknown): string | null {
   if (typeof value === 'string' && value.length > 256) return null;
   const requested = typeof value === 'string' && value.trim()
     ? [...new Set(value.trim().split(/\s+/))]
-    : [...SUPPORTED_SCOPES];
+    : ['mcp:mail'];
   if (requested.some((scope) => !SUPPORTED_SCOPES.includes(scope as (typeof SUPPORTED_SCOPES)[number]))) {
     return null;
   }
@@ -148,11 +148,12 @@ function tokenResponse(config: OAuthConfig, clientId: string, scope: string) {
     exp: now + REFRESH_TOKEN_TTL_SECONDS,
     jti: randomBytes(18).toString('base64url')
   };
+  const offlineAccess = scope.split(/\s+/).includes('offline_access');
   return {
     access_token: `oa.${signPayload(accessPayload, config.signingSecret)}`,
     token_type: 'Bearer',
     expires_in: ACCESS_TOKEN_TTL_SECONDS,
-    refresh_token: `or.${signPayload(refreshPayload, config.signingSecret)}`,
+    ...(offlineAccess ? { refresh_token: `or.${signPayload(refreshPayload, config.signingSecret)}` } : {}),
     scope
   };
 }
