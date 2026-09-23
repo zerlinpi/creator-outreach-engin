@@ -37,6 +37,46 @@ describe('mail tool presenters', () => {
     expect(summary).not.toHaveProperty('text');
   });
 
+  it('bounds untrusted header, address, reference, and attachment metadata', () => {
+    const oversized: NormalizedMessage = {
+      ...message,
+      mailbox: 'M'.repeat(2_000),
+      from: Array.from({ length: 120 }, (_, index) => ('a' + index + '@example.com')),
+      to: Array.from({ length: 120 }, (_, index) => ('b' + index + '@example.com')),
+      cc: Array.from({ length: 120 }, (_, index) => ('c' + index + '@example.com')),
+      subject: 'S'.repeat(2_000),
+      messageId: 'I'.repeat(2_000),
+      inReplyTo: 'R'.repeat(2_000),
+      references: Array.from({ length: 120 }, (_, index) => '<ref-' + index + '@example.com>'),
+      attachments: Array.from({ length: 120 }, (_, index) => ({
+        filename: 'f'.repeat(700) + index,
+        contentType: 'application/' + 'x'.repeat(700),
+        size: index,
+        contentDisposition: 'attachment',
+        cid: 'c'.repeat(700)
+      })),
+      truncated: false
+    };
+
+    const summary = toSearchSummary(oversized);
+    expect(summary.mailbox.length).toBeLessThanOrEqual(1_001);
+    expect(summary.subject.length).toBeLessThanOrEqual(1_001);
+    expect(summary.from).toHaveLength(100);
+    expect(summary.to).toHaveLength(100);
+    expect(summary.truncated).toBe(true);
+
+    const view = toEmailView(oversized, false);
+    expect(view.mailbox.length).toBeLessThanOrEqual(1_001);
+    expect(view.subject.length).toBeLessThanOrEqual(1_001);
+    expect(view.from).toHaveLength(100);
+    expect(view.to).toHaveLength(100);
+    expect(view.cc).toHaveLength(100);
+    expect(view.references).toHaveLength(100);
+    expect(view.attachments).toHaveLength(100);
+    expect(view.attachments[0].filename!.length).toBeLessThanOrEqual(513);
+    expect(view.truncated).toBe(true);
+  });
+
   it('bounds full email body content returned to MCP clients', () => {
     const oversized: NormalizedMessage = {
       ...message,
