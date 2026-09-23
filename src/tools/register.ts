@@ -14,6 +14,7 @@ const MAX_MAILBOX_CHARS = 1024;
 const MAX_MESSAGE_REF_CHARS = 4096;
 const MAX_BODY_CHARS = 512_000;
 const MAX_THREAD_MESSAGES = 50;
+const MAX_ALL_ACCOUNT_SEARCH_ITEMS = 1000;
 const email = z.string().max(320).email();
 const accountId = z.string().regex(/^[a-z][a-z0-9_]{0,31}$/);
 const optionalAccountId = accountId.optional();
@@ -113,15 +114,24 @@ export function registerMailTools(
           unread: a.unread,
           since: a.since ? new Date(a.since) : undefined,
           before: a.before ? new Date(a.before) : undefined,
-          limit: a.all_accounts ? (a.per_account_limit ?? Math.min(a.limit ?? 20, 20)) : a.limit
+          limit: a.limit
         };
 
         if (a.all_accounts) {
           const runtimes = accounts.list();
+          const requestedPerAccountLimit = a.per_account_limit ?? Math.min(a.limit ?? 20, 20);
+          const maxPerAccount = Math.max(1, Math.floor(MAX_ALL_ACCOUNT_SEARCH_ITEMS / Math.max(1, runtimes.length)));
+          if (a.per_account_limit && requestedPerAccountLimit > maxPerAccount) {
+            throw new ConnectorError(
+              'RATE_LIMITED',
+              'Cross-account search is too broad. Lower per_account_limit or search fewer accounts.'
+            );
+          }
+          const allAccountCriteria = { ...criteria, limit: Math.min(requestedPerAccountLimit, maxPerAccount) };
           const searched = await mapWithConcurrency(runtimes, allAccountReadConcurrency, (runtime) =>
             allAccountReadLimiter.run(async () => {
             try {
-              const messages = await runtime.imap.searchEmails(criteria);
+              const messages = await runtime.imap.searchEmails(allAccountCriteria);
               return {
                 account: runtime.id,
                 address: runtime.address,
