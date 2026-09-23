@@ -7,6 +7,7 @@ const msg = (to: string, subject = 'Hello') => ({ to: [to], subject, text: 'Body
 describe('batch safety', () => {
   it('defaults to a maximum of 10 messages', () => expect(() => validateBatch(Array.from({ length: 11 }, (_, i) => msg(`u${i}@example.com`)))).toThrow());
   it('never permits more than 25 messages', () => expect(() => validateBatch(Array.from({ length: 26 }, (_, i) => msg(`u${i}@example.com`)), { max: 25 })).toThrow());
+  it('requires an integer batch maximum', () => expect(() => validateBatch([msg('a@example.com')], { max: 1.5 })).toThrow());
   it('rejects duplicate recipient and subject pairs', () => expect(() => validateBatch([msg('a@example.com'), msg('A@example.com')])).toThrow());
 
   it('treats empty optional cc and bcc lists as omitted', () => {
