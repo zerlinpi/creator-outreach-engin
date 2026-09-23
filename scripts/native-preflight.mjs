@@ -49,7 +49,7 @@ if (!failures.length) {
 }
 
 if (config) {
-  if (process.env.NODE_ENV !== 'production') warn('NODE_ENV is not production.');
+  if (process.env.NODE_ENV !== 'production') fail('NODE_ENV must be production for native deployment.');
   if (config.bindHost !== '127.0.0.1') {
     warn('CONNECTOR_BIND_HOST is not 127.0.0.1. For same-host Nginx/native deployment, loopback binding is recommended.');
   }
