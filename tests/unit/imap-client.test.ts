@@ -91,6 +91,11 @@ describe('stable IMAP message references', () => {
     });
   });
 
+  it('rejects control characters in message-reference mailbox names', () => {
+    const unsafe = Buffer.from(JSON.stringify({ mailbox: 'INBOX\r\nBAD', uid: 1, uidValidity: '1' }), 'utf8').toString('base64url');
+    expect(() => decodeMessageRef(unsafe)).toThrowError(expect.objectContaining({ code: 'MESSAGE_NOT_FOUND' }));
+  });
+
   it('rejects legacy or malformed references that are not bound to UIDVALIDITY', () => {
     const legacy = Buffer.from(JSON.stringify({ mailbox: 'INBOX', uid: 1 }), 'utf8').toString('base64url');
     expect(() => decodeMessageRef(legacy)).toThrowError(ConnectorError);
