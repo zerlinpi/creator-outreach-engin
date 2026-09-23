@@ -362,7 +362,7 @@ Inject secrets through the hosting platform. Never bake a populated `.env` into 
 
 For a direct Node deployment behind same-host Nginx, use `CONNECTOR_BIND_HOST=127.0.0.1`. For Docker behind same-host Nginx, use `CONNECTOR_BIND_HOST=0.0.0.0` inside the container and publish only to host loopback (for example `127.0.0.1:3000:3000`). The Docker healthcheck follows the configured `PORT` instead of assuming port 3000.
 
-For non-Docker production deployments, set `NODE_ENV=production`. The public MCP endpoint must be HTTPS. See `docs/DEPLOY.md` for the deployment sequence and `docs/NGINX.md` for the reverse proxy.
+For native Node.js production deployments, set `NODE_ENV=production` and run `npm run preflight:native` before starting/restarting the service. The public MCP endpoint must be HTTPS. See `docs/NATIVE_DEPLOY.md` for aaPanel/BT Panel, PM2, systemd, permissions, and working-directory guidance; see `docs/NGINX.md` for the reverse proxy.
 
 Current production guidance remains single process / single replica because the default idempotency state is in memory.
 
