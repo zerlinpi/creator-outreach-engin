@@ -5,7 +5,7 @@ import { AsyncSemaphore } from '../concurrency.js';
 import { ConnectorError } from '../errors.js';
 import { parseMessage } from './parser.js';
 import { normalizeSubject, resolveThread } from './threading.js';
-import { pickMailboxBySpecialUse, resolveMailboxAlias } from './mailboxes.js';
+import { pickMailboxBySpecialUse, resolveMailboxAlias, SENT_FALLBACK_NAMES } from './mailboxes.js';
 import type { NormalizedMessage, ThreadResult } from './types.js';
 
 export interface SearchCriteria {
@@ -217,7 +217,7 @@ export class ImapMailClient {
 
   private async sentMailbox(): Promise<string | null> {
     const boxes = await this.listMailboxes();
-    return pickMailboxBySpecialUse(boxes, '\\Sent', ['Sent', 'Sent Messages', '已发送', '已发送邮件']);
+    return pickMailboxBySpecialUse(boxes, '\\Sent', SENT_FALLBACK_NAMES);
   }
 
   private async resolveSearchMailbox(requested?: string): Promise<string> {
