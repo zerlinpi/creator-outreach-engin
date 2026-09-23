@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -37,6 +37,8 @@ describe('EncryptedAccountStore', () => {
 
     const raw = await readFile(path, 'utf8');
     expect(raw).not.toContain('secret-password-');
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+    expect((await stat(dir)).mode & 0o777).toBe(0o700);
     const loaded = await store.loadAll(base());
     expect(loaded.accounts).toHaveLength(10);
     expect(loaded.accounts[7].appPassword).toBe('secret-password-7');
