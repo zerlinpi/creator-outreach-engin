@@ -7,15 +7,17 @@ import { FailureRateLimiter, applySensitiveHeaders, isSameOriginMutation, reques
 import { createMailAccountRuntime, type MailAccountRegistry } from './mail/accounts.js';
 import { EncryptedAccountStore } from './mail/account-store.js';
 import { isHostnameOrIpv4 } from './network.js';
+import { ConnectorError } from './errors.js';
 
+const AccountIdSchema = z.string().regex(/^[a-z][a-z0-9_]{0,31}$/);
 const HostSchema = z.string().trim().min(1).max(253).refine(
   isHostnameOrIpv4,
   'Host must be a valid hostname or IPv4 address without scheme, path, port, or wildcard.'
 );
 
 const AccountInput = z.object({
-  id: z.string().regex(/^[a-z][a-z0-9_]{0,31}$/),
-  username: z.string().email(),
+  id: AccountIdSchema,
+  username: z.string().max(320).email(),
   appPassword: z.string().max(4096).optional(),
   fromName: z.string().trim().min(1).max(120).refine((value) => !/[\r\n]/.test(value), 'From name must not contain CR or LF characters.'),
   imapHost: HostSchema,
@@ -205,10 +207,10 @@ export function registerMailboxAdmin(
         if (!appPassword) return { status: 400, body: { error: 'Password is required for a new mailbox.' } };
 
         const complete = { ...input, appPassword };
+        const hadDefault = Boolean(registry.defaultAccountId);
         await store.upsert(complete);
         registry.upsert(createMailAccountRuntime(toConfig(complete, baseConfig), 'ui'));
-        if (!registry.defaultAccountId) {
-          registry.setDefault(input.id);
+        if (!hadDefault) {
           await store.setDefault(input.id);
         }
         return { status: existing ? 200 : 201, body: { ok: true, account: input.id } };
@@ -239,10 +241,11 @@ export function registerMailboxAdmin(
 
   app.post('/admin/api/default', async (req, res) => {
     try {
-      const id = z.object({ id: z.string() }).parse(req.body).id;
+      const id = z.object({ id: AccountIdSchema }).parse(req.body).id;
       await mutate(async () => {
-        registry.setDefault(id);
+        if (!registry.has(id)) throw new ConnectorError('ACCOUNT_NOT_FOUND', 'The requested mail account is not configured.');
         await store.setDefault(id);
+        registry.setDefault(id);
       });
       res.json({ ok: true, defaultAccount: id });
     } catch (error) {
