@@ -19,7 +19,8 @@
     "verify": "npm test && npm run typecheck && npm run build",
     "doctor:build": "npm run build --silent && npm run doctor --silent",
     "probe": "node --env-file-if-exists=.env scripts/probe.mjs",
-    "probe:base": "node --env-file-if-exists=.env scripts/probe.mjs --allow-unready"
+    "probe:base": "node --env-file-if-exists=.env scripts/probe.mjs --allow-unready",
+    "preflight:native": "node --env-file-if-exists=.env scripts/native-preflight.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/express": "^2.0.0",
