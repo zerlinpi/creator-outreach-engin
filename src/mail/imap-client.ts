@@ -178,7 +178,7 @@ export class ImapMailClient {
     readonly accountId: string = 'default',
     private readonly messageRefSecret?: string
   ) {
-    this.semaphore = new AsyncSemaphore(config.imap.maxConcurrency ?? 2);
+    this.semaphore = new AsyncSemaphore(config.imap.maxConcurrency ?? 2, 100);
   }
 
   disable(): void {
