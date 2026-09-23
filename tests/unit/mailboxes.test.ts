@@ -20,6 +20,14 @@ describe('mailbox selection', () => {
     expect(path).toBe('Sent Messages');
   });
 
+  it('recognizes Microsoft-style Sent Items without special-use metadata', () => {
+    const path = pickMailboxBySpecialUse([
+      { path: 'INBOX', specialUse: null },
+      { path: 'Sent Items', specialUse: null }
+    ], '\\Sent', ['Sent', 'Sent Messages', 'Sent Items']);
+    expect(path).toBe('Sent Items');
+  });
+
   it('returns null when no safe match exists', () => {
     expect(pickMailboxBySpecialUse([{ path: 'INBOX', specialUse: null }], '\\Sent', ['Sent'])).toBeNull();
   });
