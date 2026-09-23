@@ -212,7 +212,14 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
     bearer_methods_supported: ['header']
   };
 
-  app.use(['/oauth/authorize', '/oauth/token', '/oauth/register'], (_req, res, next) => { applySensitiveHeaders(res); next(); });
+  app.use('/oauth/authorize', (_req, res, next) => {
+    applySensitiveHeaders(res, { formActionOrigins: ['https://chatgpt.com'] });
+    next();
+  });
+  app.use(['/oauth/token', '/oauth/register'], (_req, res, next) => {
+    applySensitiveHeaders(res);
+    next();
+  });
 
   app.get('/.well-known/oauth-protected-resource', (_req, res) => res.json(protectedResource));
   app.get('/.well-known/oauth-protected-resource/mcp', (_req, res) => res.json(protectedResource));

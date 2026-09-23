@@ -125,6 +125,39 @@ describe('OAuth authorization surface', () => {
     );
   });
 
+  it('allows the ChatGPT callback only on the OAuth authorization form CSP', async () => {
+    const { baseUrl } = await startOAuthApp();
+    const redirectUri = 'https://chatgpt.com/connector_platform_oauth_redirect';
+    const registration = await fetch(`${baseUrl}/oauth/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        client_name: 'ChatGPT',
+        redirect_uris: [redirectUri],
+        token_endpoint_auth_method: 'none'
+      })
+    });
+    expect(registration.status).toBe(201);
+    const registrationCsp = registration.headers.get('content-security-policy') ?? '';
+    expect(registrationCsp).toContain("form-action 'self';");
+    expect(registrationCsp).not.toContain('https://chatgpt.com');
+
+    const registered = await registration.json() as { client_id: string };
+    const challenge = createHash('sha256').update('A'.repeat(64)).digest('base64url');
+    const authorizeUrl = new URL(`${baseUrl}/oauth/authorize`);
+    authorizeUrl.searchParams.set('response_type', 'code');
+    authorizeUrl.searchParams.set('client_id', registered.client_id);
+    authorizeUrl.searchParams.set('redirect_uri', redirectUri);
+    authorizeUrl.searchParams.set('scope', 'mcp:mail');
+    authorizeUrl.searchParams.set('code_challenge', challenge);
+    authorizeUrl.searchParams.set('code_challenge_method', 'S256');
+
+    const authorize = await fetch(authorizeUrl);
+    expect(authorize.status).toBe(200);
+    const authorizeCsp = authorize.headers.get('content-security-policy') ?? '';
+    expect(authorizeCsp).toContain("form-action 'self' https://chatgpt.com;");
+  });
+
   it('rejects a valid access token that lacks the mcp:mail scope', async () => {
     const { baseUrl, oauth } = await startOAuthApp();
     const token = signedAccessToken(oauth.issuer, oauth.signingSecret, 'offline_access');
