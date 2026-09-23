@@ -57,17 +57,16 @@ export function registerMailTools(
       try {
         if (account || accounts.size === 1) return result(await accounts.resolve(account).imap.listMailboxes());
 
-        const rows = await mapWithConcurrency(accounts.list(), allAccountReadConcurrency, (runtime) =>
-          allAccountReadLimiter.run(async () => {
+        const rows = await mapWithConcurrency(accounts.list(), allAccountReadConcurrency, async (runtime) => {
           try {
-            return {
+            return await allAccountReadLimiter.run(async () => ({
               account: runtime.id,
               address: runtime.address,
               fromName: runtime.fromName,
               source: runtime.source ?? 'environment',
               ok: true as const,
               mailboxes: await runtime.imap.listMailboxes()
-            };
+            }));
           } catch (error) {
             return {
               account: runtime.id,
@@ -78,7 +77,7 @@ export function registerMailTools(
               error: toSafeError(error)
             };
           }
-        }));
+        });
         return result({ accountCount: rows.length, accountSelectionRequired: rows.length > 1, accounts: rows });
       } catch (e) { return failure(e); }
     }
@@ -129,10 +128,9 @@ export function registerMailTools(
             );
           }
           const allAccountCriteria = { ...criteria, limit: Math.min(requestedPerAccountLimit, maxPerAccount) };
-          const searched = await mapWithConcurrency(runtimes, allAccountReadConcurrency, (runtime) =>
-            allAccountReadLimiter.run(async () => {
+          const searched = await mapWithConcurrency(runtimes, allAccountReadConcurrency, async (runtime) => {
             try {
-              const messages = await runtime.imap.searchEmails(allAccountCriteria);
+              const messages = await allAccountReadLimiter.run(() => runtime.imap.searchEmails(allAccountCriteria));
               return {
                 account: runtime.id,
                 address: runtime.address,
@@ -147,7 +145,7 @@ export function registerMailTools(
                 error: toSafeError(error)
               };
             }
-          }));
+          });
 
           const globalLimit = a.limit ?? 20;
           const results = searched
@@ -362,8 +360,10 @@ export function registerMailTools(
         if (messages.length > effectiveMax) throw new ConnectorError('RATE_LIMITED', 'Batch contains too many messages (max ' + effectiveMax + ').');
 
         const groups = new Map<string, Array<{ index: number; message: OutgoingMessage }>>();
+        const groupRuntimes = new Map<string, ReturnType<MailAccountRegistry['resolve']>>();
         messages.forEach(({ account: messageAccount, ...message }, index) => {
           const runtime = accounts.resolve(messageAccount!);
+          groupRuntimes.set(runtime.id, runtime);
           const group = groups.get(runtime.id) ?? [];
           group.push({ index, message });
           groups.set(runtime.id, group);
@@ -378,31 +378,50 @@ export function registerMailTools(
           );
         }
 
-        const executeMulti = async () => {
-          const groupedResults = await mapWithConcurrency([...groups.entries()], multiAccountSendConcurrency, ([accountIdValue, entries]) =>
-            multiAccountSendLimiter.run(async () => {
-            const runtime = accounts.resolve(accountIdValue);
-            const groupOptions = { ...options, max: entries.length };
-            if (dry_run) {
-              return preflightByAccount.get(accountIdValue)!.map((item, offset) => ({
-                ...item,
-                index: entries[offset].index,
-                account: runtime.id,
-                accountAddress: runtime.address
-              }));
-            }
-            const sent = await executeBatch(entries.map((entry) => entry.message), (message) => runtime.smtp.send(message), groupOptions);
-            return sent.map((item, offset) => ({
+        const dryRunResults = () => [...groups.entries()]
+          .flatMap(([accountIdValue, entries]) => {
+            const runtime = groupRuntimes.get(accountIdValue)!;
+            return preflightByAccount.get(accountIdValue)!.map((item, offset) => ({
               ...item,
               index: entries[offset].index,
               account: runtime.id,
               accountAddress: runtime.address
             }));
-          }));
+          })
+          .sort((left, right) => left.index - right.index);
+
+        if (dry_run) return result(dryRunResults());
+
+        const executeMulti = async () => {
+          const groupedResults = await mapWithConcurrency([...groups.entries()], multiAccountSendConcurrency, async ([accountIdValue, entries]) => {
+            const runtime = groupRuntimes.get(accountIdValue)!;
+            const groupOptions = { ...options, max: entries.length };
+            try {
+              const sent = await multiAccountSendLimiter.run(() =>
+                executeBatch(entries.map((entry) => entry.message), (message) => runtime.smtp.send(message), groupOptions)
+              );
+              return sent.map((item, offset) => ({
+                ...item,
+                index: entries[offset].index,
+                account: runtime.id,
+                accountAddress: runtime.address
+              }));
+            } catch (error) {
+              const safeError = toSafeError(error);
+              return preflightByAccount.get(accountIdValue)!.map((item, offset) => ({
+                ok: false as const,
+                index: entries[offset].index,
+                to: item.to,
+                subject: item.subject,
+                attempts: 0,
+                error: safeError,
+                account: runtime.id,
+                accountAddress: runtime.address
+              }));
+            }
+          });
           return groupedResults.flat().sort((left, right) => left.index - right.index);
         };
-
-        if (dry_run) return result(await executeMulti());
 
         const payload = {
           messages: messages.map((message) => ({ ...message })),
