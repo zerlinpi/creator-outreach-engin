@@ -85,7 +85,7 @@ function validateTiming(options: BatchOptions, messageCount: number): {
 
 export function validateBatch(messages: OutgoingMessage[], options: BatchOptions = {}): OutgoingMessage[] {
   const max = options.max ?? 10;
-  if (max < 1 || max > 25) {
+  if (!Number.isInteger(max) || max < 1 || max > 25) {
     throw new ConnectorError('RATE_LIMITED', 'Batch maximum must be between 1 and 25.');
   }
   if (messages.length > max || messages.length > 25) {
