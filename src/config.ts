@@ -236,15 +236,16 @@ function parseAccounts(
 } {
   const ids = parseAccountIds(parsed.MAIL_ACCOUNTS);
   if (!ids.length) {
-    const legacyConfigured = [parsed.MAIL_USERNAME, parsed.MAIL_APP_PASSWORD].filter(Boolean).length;
-    if (legacyConfigured === 1) {
+    const legacyUsername = parsed.MAIL_USERNAME;
+    const legacyPassword = parsed.MAIL_APP_PASSWORD;
+    if (Boolean(legacyUsername) !== Boolean(legacyPassword)) {
       throw new Error('MAIL_USERNAME and MAIL_APP_PASSWORD must be configured together.');
     }
-    if (legacyConfigured === 0) return { accounts: {} };
+    if (!legacyUsername || !legacyPassword) return { accounts: {} };
     const id = AccountIdSchema.parse((parsed.MAIL_DEFAULT_ACCOUNT ?? 'default').trim().toLowerCase());
     return {
       defaultAccount: id,
-      accounts: { [id]: buildAccount(id, parsed.MAIL_USERNAME, parsed.MAIL_APP_PASSWORD, parsed.MAIL_FROM_NAME, parsed, env, messageRefSecret) }
+      accounts: { [id]: buildAccount(id, legacyUsername, legacyPassword, parsed.MAIL_FROM_NAME, parsed, env, messageRefSecret) }
     };
   }
 
