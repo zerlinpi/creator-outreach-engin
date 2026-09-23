@@ -65,6 +65,25 @@ describe('EncryptedAccountStore', () => {
     expect(new Set(loaded.accounts.map((account) => account.id)).size).toBe(20);
   });
 
+  it('does not reuse a predictable mailbox-store temp path', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'mail-store-temp-')); dirs.push(dir);
+    const path = join(dir, 'accounts.json');
+    await writeFile(path + '.tmp', 'sentinel');
+    const store = new EncryptedAccountStore(path, '0123456789abcdef0123456789abcdef', 10);
+    await store.upsert({
+      id: 'campx',
+      username: 'mail@campx.example',
+      appPassword: 'secret-password',
+      fromName: 'CAMPX',
+      imapHost: 'imap.example.com',
+      imapPort: 993,
+      smtpHost: 'smtp.example.com',
+      smtpPort: 465
+    });
+    expect(await readFile(path + '.tmp', 'utf8')).toBe('sentinel');
+    expect((await store.loadAll(base())).accounts).toHaveLength(1);
+  });
+
   it('does not chmod an existing operator-managed parent directory', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'mail-store-parent-')); dirs.push(dir);
     await chmod(dir, 0o755);
