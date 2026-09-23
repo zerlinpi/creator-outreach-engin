@@ -301,6 +301,7 @@ Optional provider overrides:
 - `TEST_MAIL_IMAP_PORT`
 - `TEST_MAIL_SMTP_HOST`
 - `TEST_MAIL_SMTP_PORT`
+- `TEST_MAIL_SMTP_SECURITY=tls|starttls` (use `starttls` for providers such as Microsoft 365 on port 587)
 
 ### Controlled provider pacing
 
