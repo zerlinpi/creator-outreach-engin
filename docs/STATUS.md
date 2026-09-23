@@ -4,7 +4,7 @@ Last updated: 2026-09-22
 
 ## Current release target
 
-v0.3.5 is the current production-hardening release for many-mailbox operation. The connector keeps the seven-tool MCP surface while adding a browser Mailbox Manager, fail-closed account isolation, deployment probes, stricter runtime validation, and safer reverse-proxy operation suitable for roughly 10–50 configured mailboxes.
+v0.3.6 is the current production-hardening release for many-mailbox operation. The connector keeps the seven-tool MCP surface while adding a browser Mailbox Manager, fail-closed account isolation, deployment probes, stricter runtime validation, and safer reverse-proxy operation suitable for roughly 10–50 configured mailboxes.
 
 ## Implemented and repository-verified
 
