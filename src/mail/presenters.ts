@@ -127,8 +127,8 @@ export function toSearchSummary(message: NormalizedMessage): SearchEmailSummary 
   };
 }
 
-export function toEmailView(message: NormalizedMessage, includeHtml = false): EmailView {
-  const text = truncateForTool(message.text);
+export function toEmailView(message: NormalizedMessage, includeHtml = false, maxBodyChars = MAX_TOOL_BODY_CHARS): EmailView {
+  const text = truncateForTool(message.text, maxBodyChars);
   const mailbox = truncateForTool(message.mailbox, MAX_TOOL_HEADER_CHARS);
   const from = truncateList(message.from, MAX_TOOL_ADDRESS_COUNT, MAX_TOOL_ADDRESS_CHARS);
   const replyTo = truncateList(message.replyTo ?? [], MAX_TOOL_ADDRESS_COUNT, MAX_TOOL_ADDRESS_CHARS);
@@ -140,7 +140,7 @@ export function toEmailView(message: NormalizedMessage, includeHtml = false): Em
   const references = truncateList(message.references, MAX_TOOL_REFERENCE_COUNT, MAX_TOOL_HEADER_CHARS);
   const attachments = truncateAttachments(message.attachments);
   let html: { value: string; truncated: boolean } | undefined;
-  if (includeHtml && message.html) html = truncateForTool(sanitizeHtmlForTool(message.html));
+  if (includeHtml && message.html) html = truncateForTool(sanitizeHtmlForTool(message.html), maxBodyChars);
 
   const view: EmailView = {
     id: message.id,
