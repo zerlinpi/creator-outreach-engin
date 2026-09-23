@@ -330,11 +330,16 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
       res.setHeader('Retry-After', String(loginState.retryAfterSeconds ?? 900));
       return res.status(429).send('Too many failed authorization attempts.');
     }
-    const requestId = typeof req.body?.request_id === 'string' ? req.body.request_id : '';
+    const requestId = typeof req.body?.request_id === 'string' && req.body.request_id.length <= 128 ? req.body.request_id : '';
     const authorization = pending.get(requestId);
     if (!authorization) return res.status(400).send('Authorization request expired or invalid.');
 
-    if (req.body?.decision === 'deny') {
+    const decision = req.body?.decision;
+    if (decision !== 'allow' && decision !== 'deny') {
+      return res.status(400).send('Authorization decision is invalid.');
+    }
+
+    if (decision === 'deny') {
       pending.delete(requestId);
       const redirect = new URL(authorization.redirectUri);
       redirect.searchParams.set('error', 'access_denied');
@@ -343,7 +348,7 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
       return res.redirect(302, redirect.toString());
     }
 
-    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    const password = typeof req.body?.password === 'string' && req.body.password.length <= 4096 ? req.body.password : '';
     if (!safeEqual(password, config.loginPassword)) {
       loginLimiter.failure(clientKey);
       return res.status(401).send('Invalid authorization password.');
