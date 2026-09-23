@@ -217,14 +217,15 @@ export class ImapMailClient {
 
   private async sentMailbox(): Promise<string | null> {
     const boxes = await this.listMailboxes();
-    return pickMailboxBySpecialUse(boxes, '\\Sent', SENT_FALLBACK_NAMES);
+    const sent = pickMailboxBySpecialUse(boxes, '\\Sent', SENT_FALLBACK_NAMES);
+    return sent ? validateMailboxName(sent) : null;
   }
 
   private async resolveSearchMailbox(requested?: string): Promise<string> {
     const normalized = requested?.trim().toUpperCase();
     if (!normalized || normalized === 'INBOX' || normalized === '\\INBOX') return 'INBOX';
     if (normalized === 'SENT' || normalized === '\\SENT') {
-      return resolveMailboxAlias(requested, await this.listMailboxes());
+      return validateMailboxName(resolveMailboxAlias(requested, await this.listMailboxes()));
     }
     return validateMailboxName(requested!);
   }
