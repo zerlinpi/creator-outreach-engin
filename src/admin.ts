@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
-import type { Express, NextFunction, Request, Response } from 'express';
+import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { z } from 'zod';
 import type { AppConfig, MailAccountConfig, MailAdminConfig } from './config.js';
 import { runMailDiagnostics } from './diagnostics.js';
@@ -181,7 +181,7 @@ export function registerMailboxAdmin(
       return res.status(403).json({ error: 'Cross-origin admin mutation rejected.' });
     }
     next();
-  });
+  }, express.json({ limit: '64kb' }));
 
   app.get('/admin/api/accounts', async (_req, res) => {
     const managed = new Map((await store.list()).map((item) => [item.id, item]));
