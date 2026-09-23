@@ -248,7 +248,9 @@ describe('remote MCP HTTP surface', () => {
         }
       }));
       expect(batch).toHaveLength(2);
-      expect(batch.every((entry: { ok: boolean }) => entry.ok)).toBe(true);
+      expect(batch.every((entry: { ok: boolean; account?: string; accountAddress?: string }) =>
+        entry.ok && entry.account === 'default' && entry.accountAddress === 'campx@example.com'
+      )).toBe(true);
       expect((sent as OutgoingMessage[]).slice(3).map((message) => message.to)).toEqual([['a@example.com'], ['b@example.com']]);
     } finally {
       await transport.terminateSession().catch(() => undefined);
