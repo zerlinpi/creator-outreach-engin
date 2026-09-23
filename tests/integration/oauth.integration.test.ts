@@ -276,6 +276,49 @@ describe('OAuth authorization surface', () => {
     expect(onlineTokenBody.scope).toBe('mcp:mail');
     expect(onlineTokenBody).not.toHaveProperty('refresh_token');
 
+    const compatVerifier = 'C'.repeat(63) + '=';
+    const compatChallenge = createHash('sha256').update(compatVerifier).digest('base64url');
+    const compatAuthorizeUrl = new URL(`${baseUrl}/oauth/authorize`);
+    compatAuthorizeUrl.searchParams.set('response_type', 'code');
+    compatAuthorizeUrl.searchParams.set('client_id', registered.client_id);
+    compatAuthorizeUrl.searchParams.set('redirect_uri', redirectUri);
+    compatAuthorizeUrl.searchParams.set('scope', 'mcp:mail');
+    compatAuthorizeUrl.searchParams.set('code_challenge', compatChallenge);
+    compatAuthorizeUrl.searchParams.set('code_challenge_method', 'S256');
+
+    const compatAuthorize = await fetch(compatAuthorizeUrl);
+    expect(compatAuthorize.status).toBe(200);
+    const compatHtml = await compatAuthorize.text();
+    const compatRequestId = /name="request_id" value="([^"]+)"/.exec(compatHtml)?.[1];
+    expect(compatRequestId).toBeTruthy();
+
+    const compatConsent = await fetch(`${baseUrl}/oauth/authorize`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        request_id: compatRequestId!,
+        password: 'oauth-login-password-123',
+        decision: 'allow'
+      })
+    });
+    expect(compatConsent.status).toBe(302);
+    const compatCode = new URL(compatConsent.headers.get('location')!).searchParams.get('code');
+    expect(compatCode).toBeTruthy();
+
+    const compatToken = await fetch(`${baseUrl}/oauth/token`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: registered.client_id,
+        redirect_uri: redirectUri,
+        code: compatCode!,
+        code_verifier: compatVerifier
+      })
+    });
+    expect(compatToken.status).toBe(200);
+
     const verifier = 'A'.repeat(64);
     const challenge = createHash('sha256').update(verifier).digest('base64url');
     const authorizeUrl = new URL(`${baseUrl}/oauth/authorize`);
