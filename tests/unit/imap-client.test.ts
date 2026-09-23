@@ -91,6 +91,18 @@ describe('stable IMAP message references', () => {
     });
   });
 
+  it('rejects out-of-range UID and UIDVALIDITY values in message references', () => {
+    for (const payload of [
+      { mailbox: 'INBOX', uid: 0, uidValidity: '1' },
+      { mailbox: 'INBOX', uid: 0x1_0000_0000, uidValidity: '1' },
+      { mailbox: 'INBOX', uid: 1, uidValidity: '0' },
+      { mailbox: 'INBOX', uid: 1, uidValidity: '4294967296' }
+    ]) {
+      const ref = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+      expect(() => decodeMessageRef(ref)).toThrowError(expect.objectContaining({ code: 'MESSAGE_NOT_FOUND' }));
+    }
+  });
+
   it('rejects control characters in message-reference mailbox names', () => {
     const unsafe = Buffer.from(JSON.stringify({ mailbox: 'INBOX\r\nBAD', uid: 1, uidValidity: '1' }), 'utf8').toString('base64url');
     expect(() => decodeMessageRef(unsafe)).toThrowError(expect.objectContaining({ code: 'MESSAGE_NOT_FOUND' }));
