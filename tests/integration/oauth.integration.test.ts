@@ -153,6 +153,55 @@ describe('OAuth authorization surface', () => {
     const registered = await registration.json() as { client_id: string };
     expect(registered.client_id).toMatch(/^mcp\./);
 
+    const onlineVerifier = 'B'.repeat(64);
+    const onlineChallenge = createHash('sha256').update(onlineVerifier).digest('base64url');
+    const onlineAuthorizeUrl = new URL(`${baseUrl}/oauth/authorize`);
+    onlineAuthorizeUrl.searchParams.set('response_type', 'code');
+    onlineAuthorizeUrl.searchParams.set('client_id', registered.client_id);
+    onlineAuthorizeUrl.searchParams.set('redirect_uri', redirectUri);
+    onlineAuthorizeUrl.searchParams.set('scope', 'mcp:mail');
+    onlineAuthorizeUrl.searchParams.set('code_challenge', onlineChallenge);
+    onlineAuthorizeUrl.searchParams.set('code_challenge_method', 'S256');
+
+    const onlineAuthorize = await fetch(onlineAuthorizeUrl);
+    expect(onlineAuthorize.status).toBe(200);
+    const onlineHtml = await onlineAuthorize.text();
+    expect(onlineHtml).toContain('Redirect destination:');
+    expect(onlineHtml).toContain(redirectUri);
+    const onlineRequestId = /name="request_id" value="([^"]+)"/.exec(onlineHtml)?.[1];
+    expect(onlineRequestId).toBeTruthy();
+
+    const onlineConsent = await fetch(`${baseUrl}/oauth/authorize`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        request_id: onlineRequestId!,
+        password: 'oauth-login-password-123',
+        decision: 'allow'
+      })
+    });
+    const onlineCallback = new URL(onlineConsent.headers.get('location')!);
+    const onlineCode = onlineCallback.searchParams.get('code');
+    expect(onlineCode).toBeTruthy();
+
+    const onlineToken = await fetch(`${baseUrl}/oauth/token`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: registered.client_id,
+        redirect_uri: redirectUri,
+        code: onlineCode!,
+        code_verifier: onlineVerifier
+      })
+    });
+    expect(onlineToken.status).toBe(200);
+    const onlineTokenBody = await onlineToken.json() as Record<string, unknown>;
+    expect(onlineTokenBody.access_token).toEqual(expect.stringMatching(/^oa\./));
+    expect(onlineTokenBody.scope).toBe('mcp:mail');
+    expect(onlineTokenBody).not.toHaveProperty('refresh_token');
+
     const verifier = 'A'.repeat(64);
     const challenge = createHash('sha256').update(verifier).digest('base64url');
     const authorizeUrl = new URL(`${baseUrl}/oauth/authorize`);
