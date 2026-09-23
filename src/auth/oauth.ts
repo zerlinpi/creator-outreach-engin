@@ -113,7 +113,10 @@ function normalizeScope(value: unknown): string | null {
   const requested = typeof value === 'string' && value.trim()
     ? [...new Set(value.trim().split(/\s+/))]
     : ['mcp:mail'];
-  if (requested.some((scope) => !SUPPORTED_SCOPES.includes(scope as (typeof SUPPORTED_SCOPES)[number]))) {
+  if (
+    requested.some((scope) => !SUPPORTED_SCOPES.includes(scope as (typeof SUPPORTED_SCOPES)[number])) ||
+    !requested.includes('mcp:mail')
+  ) {
     return null;
   }
   return requested.join(' ');
