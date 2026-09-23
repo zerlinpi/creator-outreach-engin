@@ -234,7 +234,11 @@ function parseAccounts(
 } {
   const ids = parseAccountIds(parsed.MAIL_ACCOUNTS);
   if (!ids.length) {
-    if (!parsed.MAIL_USERNAME || !parsed.MAIL_APP_PASSWORD) return { accounts: {} };
+    const legacyConfigured = [parsed.MAIL_USERNAME, parsed.MAIL_APP_PASSWORD].filter(Boolean).length;
+    if (legacyConfigured === 1) {
+      throw new Error('MAIL_USERNAME and MAIL_APP_PASSWORD must be configured together.');
+    }
+    if (legacyConfigured === 0) return { accounts: {} };
     const id = AccountIdSchema.parse((parsed.MAIL_DEFAULT_ACCOUNT ?? 'default').trim().toLowerCase());
     return {
       defaultAccount: id,
