@@ -74,7 +74,10 @@ export function applySensitiveHeaders(res: Response): void {
 
 export function isSameOriginMutation(req: Request): boolean {
   const origin = req.header('origin');
-  if (!origin) return true;
+  if (!origin) {
+    const fetchSite = req.header('sec-fetch-site')?.toLowerCase();
+    return !fetchSite || fetchSite === 'same-origin' || fetchSite === 'none';
+  }
   try {
     const originUrl = new URL(origin);
     const requestHost = (req.header('host') ?? '').toLowerCase();
