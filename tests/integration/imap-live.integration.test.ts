@@ -30,7 +30,8 @@ function testConfig(): AppConfig {
     smtp: {
       host: process.env.TEST_MAIL_SMTP_HOST ?? 'smtp.qiye.aliyun.com',
       port: Number(process.env.TEST_MAIL_SMTP_PORT ?? '465'),
-      secure: true,
+      secure: (process.env.TEST_MAIL_SMTP_SECURITY ?? 'tls') !== 'starttls',
+      ...((process.env.TEST_MAIL_SMTP_SECURITY ?? 'tls') === 'starttls' ? { requireTLS: true } : {}),
       connectionTimeout: 15_000,
       greetingTimeout: 10_000,
       socketTimeout: 30_000
