@@ -1,4 +1,4 @@
-# Mailbox Manager v0.3.5
+# Mailbox Manager v0.3.6
 
 The Mailbox Manager is the recommended way to operate many creator-outreach inboxes from one MCP deployment.
 
