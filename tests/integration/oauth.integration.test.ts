@@ -106,6 +106,36 @@ describe('OAuth authorization surface', () => {
     expect(response.status).toBe(401);
   });
 
+  it('bounds pending authorization requests per client IP', async () => {
+    const { baseUrl } = await startOAuthApp();
+    const redirectUri = 'https://chatgpt.com/aip/callback';
+    const registration = await fetch(`${baseUrl}/oauth/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ client_name: 'Rate limit test', redirect_uris: [redirectUri], token_endpoint_auth_method: 'none' })
+    });
+    const registered = await registration.json() as { client_id: string };
+    const challenge = createHash('sha256').update('A'.repeat(64)).digest('base64url');
+
+    const authorizeUrl = new URL(`${baseUrl}/oauth/authorize`);
+    authorizeUrl.searchParams.set('response_type', 'code');
+    authorizeUrl.searchParams.set('client_id', registered.client_id);
+    authorizeUrl.searchParams.set('redirect_uri', redirectUri);
+    authorizeUrl.searchParams.set('scope', 'mcp:mail');
+    authorizeUrl.searchParams.set('code_challenge', challenge);
+    authorizeUrl.searchParams.set('code_challenge_method', 'S256');
+
+    for (let index = 0; index < 10; index += 1) {
+      const response = await fetch(authorizeUrl, { headers: { 'x-forwarded-for': '203.0.113.20' } });
+      expect(response.status).toBe(200);
+    }
+    const blocked = await fetch(authorizeUrl, { headers: { 'x-forwarded-for': '203.0.113.20' } });
+    expect(blocked.status).toBe(429);
+
+    const otherClient = await fetch(authorizeUrl, { headers: { 'x-forwarded-for': '203.0.113.21' } });
+    expect(otherClient.status).toBe(200);
+  });
+
   it('completes DCR, PKCE authorization, token exchange, refresh, and MCP tool access', async () => {
     const { baseUrl } = await startOAuthApp();
     const redirectUri = 'https://chatgpt.com/aip/callback';
@@ -157,6 +187,19 @@ describe('OAuth authorization surface', () => {
     expect(callback.searchParams.get('iss')).toBe('https://domail.campxusainc.com');
     const code = callback.searchParams.get('code');
     expect(code).toBeTruthy();
+
+    const malformedVerifier = await fetch(`${baseUrl}/oauth/token`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: registered.client_id,
+        redirect_uri: redirectUri,
+        code: code!,
+        code_verifier: 'short'
+      })
+    });
+    expect(malformedVerifier.status).toBe(400);
 
     const token = await fetch(`${baseUrl}/oauth/token`, {
       method: 'POST',
