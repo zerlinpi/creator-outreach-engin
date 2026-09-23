@@ -405,7 +405,13 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
     if (grantType === 'refresh_token') {
       const refreshToken = typeof req.body?.refresh_token === 'string' ? req.body.refresh_token : '';
       const payload = verifySignedToken(refreshToken, 'or.', 'refresh', config);
-      if (!payload || payload.cid !== clientId || !payload.jti || usedRefreshTokens.has(payload.jti)) {
+      if (
+        !payload ||
+        payload.cid !== clientId ||
+        !payload.jti ||
+        !payload.scope.split(/\s+/).includes('offline_access') ||
+        usedRefreshTokens.has(payload.jti)
+      ) {
         tokenLimiter.failure(clientKey);
         return res.status(400).json({ error: 'invalid_grant' });
       }
