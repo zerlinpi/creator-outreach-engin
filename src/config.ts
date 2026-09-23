@@ -7,7 +7,7 @@ const PortSchema = z.coerce.number().int().min(1).max(65535);
 const TimeoutSchema = z.coerce.number().int().min(1_000).max(120_000);
 const FullMessageByteSizeSchema = z.coerce.number().int().min(32 * 1024).max(25 * 1024 * 1024);
 const SearchSourceByteSizeSchema = z.coerce.number().int().min(32 * 1024).max(512 * 1024);
-const EmailSchema = z.string().email();
+const EmailSchema = z.string().max(320).email();
 const AccountIdSchema = z.string().regex(/^[a-z][a-z0-9_]{0,31}$/, 'Account ids must start with a letter and contain only lowercase letters, numbers, and underscores.');
 const ImapConcurrencySchema = z.coerce.number().int().min(1).max(8);
 const ReadConcurrencySchema = z.coerce.number().int().min(1).max(16);
@@ -25,8 +25,8 @@ function blankToUndefined(value: unknown): unknown {
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   MAIL_USERNAME: z.preprocess(blankToUndefined, EmailSchema.optional()),
-  MAIL_APP_PASSWORD: z.preprocess(blankToUndefined, z.string().min(1).optional()),
-  MAIL_ACCOUNTS: z.string().optional(),
+  MAIL_APP_PASSWORD: z.preprocess(blankToUndefined, z.string().min(1).max(4096).optional()),
+  MAIL_ACCOUNTS: z.string().max(4096).optional(),
   MAIL_DEFAULT_ACCOUNT: z.preprocess(blankToUndefined, z.string().min(1).optional()),
   MAIL_IMAP_HOST: z.string().trim().refine(isHostnameOrIpv4, 'Invalid IMAP hostname or IPv4 address.').default('imap.qiye.aliyun.com'),
   MAIL_IMAP_PORT: PortSchema.default(993),
@@ -40,20 +40,20 @@ const EnvSchema = z.object({
   MAIL_SOCKET_TIMEOUT_MS: TimeoutSchema.default(30_000),
   MAIL_MAX_MESSAGE_BYTES: FullMessageByteSizeSchema.default(10 * 1024 * 1024),
   MAIL_SEARCH_SOURCE_BYTES: SearchSourceByteSizeSchema.default(128 * 1024),
-  MAIL_MESSAGE_REF_SIGNING_KEY: z.preprocess(blankToUndefined, z.string().min(32).optional()),
+  MAIL_MESSAGE_REF_SIGNING_KEY: z.preprocess(blankToUndefined, z.string().min(32).max(4096).optional()),
   MAIL_ALL_ACCOUNT_READ_CONCURRENCY: ReadConcurrencySchema.default(4),
   MAIL_MULTI_ACCOUNT_SEND_CONCURRENCY: SendConcurrencySchema.default(3),
-  MAIL_ADMIN_PASSWORD: z.preprocess(blankToUndefined, z.string().min(16).optional()),
-  MAIL_ACCOUNT_STORE_KEY: z.preprocess(blankToUndefined, z.string().min(32).optional()),
-  MAIL_ACCOUNT_STORE_PATH: z.string().min(1).default('./data/mail-accounts.enc.json'),
+  MAIL_ADMIN_PASSWORD: z.preprocess(blankToUndefined, z.string().min(16).max(4096).optional()),
+  MAIL_ACCOUNT_STORE_KEY: z.preprocess(blankToUndefined, z.string().min(32).max(4096).optional()),
+  MAIL_ACCOUNT_STORE_PATH: z.string().min(1).max(4096).default('./data/mail-accounts.enc.json'),
   MAIL_MAX_ACCOUNTS: z.coerce.number().int().min(1).max(100).default(50),
-  CONNECTOR_AUTH_TOKEN: z.string().min(32),
+  CONNECTOR_AUTH_TOKEN: z.string().min(32).max(4096),
   CONNECTOR_BIND_HOST: z.preprocess(blankToUndefined, z.enum(['0.0.0.0', '127.0.0.1']).default('0.0.0.0')),
-  CONNECTOR_ALLOWED_HOSTS: z.preprocess(blankToUndefined, z.string().min(1).optional()),
-  CONNECTOR_JSON_LIMIT: z.string().min(1).default('1mb'),
-  OAUTH_ISSUER: z.preprocess(blankToUndefined, z.string().min(1).optional()),
-  OAUTH_LOGIN_PASSWORD: z.preprocess(blankToUndefined, z.string().min(16).optional()),
-  OAUTH_SIGNING_SECRET: z.preprocess(blankToUndefined, z.string().min(32).optional()),
+  CONNECTOR_ALLOWED_HOSTS: z.preprocess(blankToUndefined, z.string().min(1).max(8192).optional()),
+  CONNECTOR_JSON_LIMIT: z.string().min(1).max(32).default('1mb'),
+  OAUTH_ISSUER: z.preprocess(blankToUndefined, z.string().min(1).max(2048).optional()),
+  OAUTH_LOGIN_PASSWORD: z.preprocess(blankToUndefined, z.string().min(16).max(4096).optional()),
+  OAUTH_SIGNING_SECRET: z.preprocess(blankToUndefined, z.string().min(32).max(4096).optional()),
   PORT: PortSchema.default(3000)
 });
 
@@ -255,7 +255,7 @@ function parseAccounts(
     accounts[id] = buildAccount(
       id,
       EmailSchema.parse(env[prefix + 'USERNAME']),
-      z.string().min(1).parse(env[prefix + 'APP_PASSWORD']),
+      z.string().min(1).max(4096).parse(env[prefix + 'APP_PASSWORD']),
       SenderNameSchema.parse(env[prefix + 'FROM_NAME']),
       parsed,
       env,
