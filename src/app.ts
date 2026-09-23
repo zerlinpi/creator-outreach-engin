@@ -8,7 +8,7 @@ import { isOAuthAuthorized, oauthChallenge, registerOAuthRoutes, type OAuthConfi
 import type { AppConfig, MailAdminConfig } from './config.js';
 import type { ImapMailClient } from './mail/imap-client.js';
 import type { SmtpMailClient } from './mail/smtp-client.js';
-import { IdempotencyStore } from './mail/idempotency.js';
+import { IdempotencyStore, type IdempotencyExecutor } from './mail/idempotency.js';
 import { MailAccountRegistry, type MailAccountRuntime } from './mail/accounts.js';
 import type { EncryptedAccountStore } from './mail/account-store.js';
 import { registerMailboxAdmin } from './admin.js';
@@ -25,7 +25,7 @@ export interface HttpAppDependencies {
   allowedHosts?: string[];
   jsonLimit?: string;
   oauth?: OAuthConfig;
-  idempotencyStore?: IdempotencyStore;
+  idempotencyStore?: IdempotencyExecutor;
   admin?: MailAdminConfig;
   accountStore?: EncryptedAccountStore;
   baseConfig?: AppConfig;
