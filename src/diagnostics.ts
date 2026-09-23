@@ -1,4 +1,4 @@
-import { pickMailboxBySpecialUse } from './mail/mailboxes.js';
+import { pickMailboxBySpecialUse, SENT_FALLBACK_NAMES } from './mail/mailboxes.js';
 import type { ImapMailClient } from './mail/imap-client.js';
 import type { SmtpMailClient } from './mail/smtp-client.js';
 
@@ -32,7 +32,7 @@ export async function runMailDiagnostics(
   }
 
   const sentMailbox = imapOk
-    ? pickMailboxBySpecialUse(mailboxes, '\\Sent', ['Sent', 'Sent Messages', '已发送', '已发送邮件'])
+    ? pickMailboxBySpecialUse(mailboxes, '\\Sent', SENT_FALLBACK_NAMES)
     : null;
 
   if (imapOk && !sentMailbox) {
