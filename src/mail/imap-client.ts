@@ -75,6 +75,7 @@ function parseRefBody(body: string): DecodedMessageRef {
     typeof value.mailbox !== 'string' ||
     value.mailbox.length < 1 ||
     value.mailbox.length > 1024 ||
+    /[\u0000\r\n]/.test(value.mailbox) ||
     !Number.isInteger(value.uid) ||
     value.uid < 1 ||
     typeof value.uidValidity !== 'string' ||
