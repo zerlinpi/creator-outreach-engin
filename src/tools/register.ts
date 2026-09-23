@@ -352,13 +352,22 @@ export function registerMailTools(
           groups.set(runtime.id, group);
         });
 
+        const preflightByAccount = new Map<string, ReturnType<typeof preflightBatch>>();
+        for (const [accountIdValue, entries] of groups) {
+          const groupOptions = { ...options, max: entries.length };
+          preflightByAccount.set(
+            accountIdValue,
+            preflightBatch(entries.map((entry) => entry.message), groupOptions)
+          );
+        }
+
         const executeMulti = async () => {
           const groupedResults = await mapWithConcurrency([...groups.entries()], multiAccountSendConcurrency, ([accountIdValue, entries]) =>
             multiAccountSendLimiter.run(async () => {
             const runtime = accounts.resolve(accountIdValue);
             const groupOptions = { ...options, max: entries.length };
             if (dry_run) {
-              return preflightBatch(entries.map((entry) => entry.message), groupOptions).map((item, offset) => ({
+              return preflightByAccount.get(accountIdValue)!.map((item, offset) => ({
                 ...item,
                 index: entries[offset].index,
                 account: runtime.id,
