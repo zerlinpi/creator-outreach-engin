@@ -34,7 +34,11 @@ function fingerprint(payload: unknown): string {
   return createHash('sha256').update(JSON.stringify(stableValue(payload))).digest('hex');
 }
 
-export class IdempotencyStore {
+export interface IdempotencyExecutor {
+  execute<T>(key: string, payload: unknown, operation: () => Promise<T>): Promise<T>;
+}
+
+export class IdempotencyStore implements IdempotencyExecutor {
   private readonly entries = new Map<string, Entry>();
   private readonly ttlMs: number;
   private readonly maxEntries: number;
