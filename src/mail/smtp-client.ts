@@ -79,15 +79,17 @@ export class SmtpMailClient {
   }
 
   async verifyConnection(): Promise<boolean> {
-    if (!this.transport.verify) {
-      throw new ConnectorError('SMTP_UNAVAILABLE', 'SMTP connection verification is unavailable.');
-    }
-    if (!this.enabled) throw new ConnectorError('ACCOUNT_NOT_FOUND', 'Mail account configuration changed or was removed.');
-    try {
-      return await this.transport.verify();
-    } catch (error) {
-      throw classifySmtpError(error);
-    }
+    return this.sendLimiter.run(async () => {
+      if (!this.transport.verify) {
+        throw new ConnectorError('SMTP_UNAVAILABLE', 'SMTP connection verification is unavailable.');
+      }
+      if (!this.enabled) throw new ConnectorError('ACCOUNT_NOT_FOUND', 'Mail account configuration changed or was removed.');
+      try {
+        return await this.transport.verify();
+      } catch (error) {
+        throw classifySmtpError(error);
+      }
+    });
   }
 
   send(message: OutgoingMessage): Promise<SendResult> {
