@@ -281,6 +281,7 @@ Owned test mailbox IMAP:
 ```bash
 TEST_MAIL_USERNAME=test-mailbox@example.com \
 TEST_MAIL_APP_PASSWORD=... \
+TEST_MAIL_LIVE_READ=true \
 npm run test:integration
 ```
 
