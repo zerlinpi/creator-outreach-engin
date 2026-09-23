@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-import { chmod, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { z } from 'zod';
 import type { MailAccountConfig, MailRuntimeConfig } from '../config.js';
@@ -154,11 +154,23 @@ export class EncryptedAccountStore {
     // mkdir's mode applies only to newly created directories. Never chmod an existing
     // parent such as /tmp or an operator-managed shared directory.
     await mkdir(directory, { recursive: true, mode: 0o700 });
-    const temp = this.filePath + '.tmp';
-    await writeFile(temp, JSON.stringify(document, null, 2), { encoding: 'utf8', mode: 0o600 });
-    await chmod(temp, 0o600);
-    await rename(temp, this.filePath);
-    await chmod(this.filePath, 0o600);
+    const temp = this.filePath + '.' + process.pid + '.' + randomBytes(8).toString('hex') + '.tmp';
+    let tempCreated = false;
+    try {
+      await writeFile(temp, JSON.stringify(document, null, 2), {
+        encoding: 'utf8',
+        mode: 0o600,
+        flag: 'wx'
+      });
+      tempCreated = true;
+      await chmod(temp, 0o600);
+      await rename(temp, this.filePath);
+      tempCreated = false;
+      await chmod(this.filePath, 0o600);
+    } catch (error) {
+      if (tempCreated) await unlink(temp).catch(() => undefined);
+      throw error;
+    }
   }
 
   private mutate<T>(operation: () => Promise<T>): Promise<T> {
