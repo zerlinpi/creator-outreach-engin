@@ -168,7 +168,7 @@ function tokenResponse(config: OAuthConfig, clientId: string, scope: string) {
 }
 
 function verifySignedToken(token: string, prefix: 'oa.' | 'or.', expectedType: 'access' | 'refresh', config: OAuthConfig): SignedTokenPayload | null {
-  if (!token.startsWith(prefix)) return null;
+  if (token.length > 4096 || !token.startsWith(prefix)) return null;
   const payload = verifyPayload<SignedTokenPayload>(token.slice(prefix.length), config.signingSecret);
   if (!payload || payload.typ !== expectedType) return null;
   if (payload.aud !== `${config.issuer}/mcp`) return null;
