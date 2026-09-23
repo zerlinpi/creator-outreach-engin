@@ -76,10 +76,12 @@ function parseRefBody(body: string): DecodedMessageRef {
     value.mailbox.length < 1 ||
     value.mailbox.length > 1024 ||
     /[\u0000\r\n]/.test(value.mailbox) ||
-    !Number.isInteger(value.uid) ||
+    !Number.isSafeInteger(value.uid) ||
     value.uid < 1 ||
+    value.uid > 0xFFFFFFFF ||
     typeof value.uidValidity !== 'string' ||
-    !/^\d+$/.test(value.uidValidity)
+    !/^[1-9]\d{0,9}$/.test(value.uidValidity) ||
+    BigInt(value.uidValidity) > 0xFFFFFFFFn
   ) {
     throw new Error('bad ref');
   }
@@ -89,6 +91,14 @@ function parseRefBody(body: string): DecodedMessageRef {
     uid: value.uid,
     uidValidity: value.uidValidity
   };
+}
+
+function validateMailboxName(value: string): string {
+  const mailbox = value.trim();
+  if (!mailbox || mailbox.length > 1024 || /[\u0000\r\n]/.test(mailbox)) {
+    throw new ConnectorError('MAILBOX_NOT_FOUND', 'Mailbox name is invalid.');
+  }
+  return mailbox;
 }
 
 function safeSignatureEqual(a: string, b: string): boolean {
@@ -216,7 +226,7 @@ export class ImapMailClient {
     if (normalized === 'SENT' || normalized === '\\SENT') {
       return resolveMailboxAlias(requested, await this.listMailboxes());
     }
-    return requested!.trim();
+    return validateMailboxName(requested!);
   }
 
   async searchEmails(criteria: SearchCriteria): Promise<NormalizedMessage[]> {
