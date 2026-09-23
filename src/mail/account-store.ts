@@ -1,10 +1,11 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { z } from 'zod';
 import type { MailAccountConfig, MailRuntimeConfig } from '../config.js';
 import { isHostnameOrIpv4 } from '../network.js';
 
+const MAX_STORE_BYTES = 4 * 1024 * 1024;
 const SmtpSecuritySchema = z.enum(['tls', 'starttls']);
 const AccountIdSchema = z.string().regex(/^[a-z][a-z0-9_]{0,31}$/);
 const HostSchema = z.string().trim().min(1).max(253).refine(isHostnameOrIpv4, 'Invalid mailbox host.');
@@ -132,6 +133,8 @@ export class EncryptedAccountStore {
 
   private async readDocument(): Promise<StoreDocument> {
     try {
+      const file = await stat(this.filePath);
+      if (file.size > MAX_STORE_BYTES) throw new Error('Mailbox account store is unexpectedly large.');
       const raw = await readFile(this.filePath, 'utf8');
       const parsed = StoreDocumentSchema.parse(JSON.parse(raw));
       if (parsed.accounts.length > this.maxAccounts) throw new Error('Mailbox account store exceeds configured account limit.');
