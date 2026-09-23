@@ -5,6 +5,8 @@ export interface MailboxDescriptor {
   specialUse: string | null;
 }
 
+export const SENT_FALLBACK_NAMES = ['Sent', 'Sent Messages', 'Sent Items', '已发送', '已发送邮件'];
+
 export function pickMailboxBySpecialUse(
   mailboxes: MailboxDescriptor[],
   specialUse: string,
@@ -28,7 +30,7 @@ export function resolveMailboxAlias(requested: string | undefined, mailboxes: Ma
   }
 
   if (upper === 'SENT' || upper === '\\SENT') {
-    const sent = pickMailboxBySpecialUse(mailboxes, '\\Sent', ['Sent', 'Sent Messages', '已发送', '已发送邮件']);
+    const sent = pickMailboxBySpecialUse(mailboxes, '\\Sent', SENT_FALLBACK_NAMES);
     if (!sent) throw new ConnectorError('MAILBOX_NOT_FOUND', 'Sent mailbox was not found.');
     return sent;
   }
