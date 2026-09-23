@@ -14,6 +14,7 @@ interface RegisteredClient {
 }
 
 interface PendingAuthorization {
+  clientKey: string;
   clientId: string;
   redirectUri: string;
   state?: string;
@@ -45,6 +46,7 @@ const ACCESS_TOKEN_TTL_SECONDS = 60 * 60;
 const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 const AUTHORIZATION_TTL_MS = 10 * 60 * 1000;
 const MAX_PENDING_AUTHORIZATIONS = 500;
+const MAX_PENDING_AUTHORIZATIONS_PER_CLIENT = 10;
 const MAX_AUTHORIZATION_CODES = 500;
 const MAX_USED_REFRESH_TOKENS = 5000;
 
@@ -77,9 +79,18 @@ function encodeClient(client: RegisteredClient, secret: string): string {
 }
 
 function decodeClient(clientId: string, secret: string): RegisteredClient | null {
-  if (!clientId.startsWith('mcp.')) return null;
+  if (!clientId.startsWith('mcp.') || clientId.length > 32_768) return null;
   const client = verifyPayload<RegisteredClient>(clientId.slice(4), secret);
-  if (!client || !Array.isArray(client.redirectUris) || typeof client.name !== 'string') return null;
+  if (
+    !client ||
+    !Array.isArray(client.redirectUris) ||
+    client.redirectUris.length < 1 ||
+    client.redirectUris.length > 10 ||
+    client.redirectUris.some((uri) => parseRedirectUri(uri) !== uri) ||
+    typeof client.name !== 'string' ||
+    client.name.length < 1 ||
+    client.name.length > 128
+  ) return null;
   return client;
 }
 
@@ -97,6 +108,7 @@ function parseRedirectUri(value: unknown): string | null {
 }
 
 function normalizeScope(value: unknown): string | null {
+  if (typeof value === 'string' && value.length > 256) return null;
   const requested = typeof value === 'string' && value.trim()
     ? [...new Set(value.trim().split(/\s+/))]
     : [...SUPPORTED_SCOPES];
@@ -243,7 +255,7 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
     const codeChallenge = typeof req.query.code_challenge === 'string' ? req.query.code_challenge : '';
     const codeChallengeMethod = req.query.code_challenge_method;
     const scope = normalizeScope(req.query.scope);
-    const state = typeof req.query.state === 'string' ? req.query.state : undefined;
+    const state = typeof req.query.state === 'string' && req.query.state.length <= 1024 ? req.query.state : undefined;
 
     if (responseType !== 'code' || !client || !redirectUri || !client.redirectUris.includes(redirectUri) || !scope) {
       return res.status(400).send('Invalid OAuth authorization request.');
@@ -252,9 +264,19 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
       return res.status(400).send('PKCE S256 is required.');
     }
 
+    const clientKey = requestClientKey(req);
+    let pendingForClient = 0;
+    for (const authorization of pending.values()) {
+      if (authorization.clientKey === clientKey) pendingForClient += 1;
+    }
+    if (pendingForClient >= MAX_PENDING_AUTHORIZATIONS_PER_CLIENT) {
+      res.setHeader('Retry-After', '60');
+      return res.status(429).send('Too many pending authorization requests.');
+    }
     if (pending.size >= MAX_PENDING_AUTHORIZATIONS) return res.status(503).send('Authorization service is temporarily busy.');
     const requestId = randomBytes(24).toString('base64url');
     pending.set(requestId, {
+      clientKey,
       clientId,
       redirectUri,
       state,
@@ -352,12 +374,14 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
       }
       const redirectUri = parseRedirectUri(req.body?.redirect_uri);
       const verifier = typeof req.body?.code_verifier === 'string' ? req.body.code_verifier : '';
-      const challenge = createHash('sha256').update(verifier).digest('base64url');
+      const verifierValid = /^[A-Za-z0-9._~-]{43,128}$/.test(verifier);
+      const challenge = verifierValid ? createHash('sha256').update(verifier).digest('base64url') : '';
 
       if (
         entry.clientId !== clientId ||
         !redirectUri ||
         entry.redirectUri !== redirectUri ||
+        !verifierValid ||
         !safeEqual(challenge, entry.codeChallenge)
       ) {
         tokenLimiter.failure(clientKey);
