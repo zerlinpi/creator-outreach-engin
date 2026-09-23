@@ -227,13 +227,19 @@ curl -i -X POST https://domail.campxusainc.com/mcp -H 'Content-Type: application
 
 The discovery endpoints should return HTTP 200. The unauthenticated MCP request should return HTTP 401 with a `WWW-Authenticate` challenge.
 
-After deployment, run:
+After the service first starts, run:
+
+```bash
+npm run probe:base
+```
+
+The base probe validates the deployment even before a mailbox is configured; `/ready` may be either 200 or 503. After at least one mailbox has been added and its IMAP/SMTP test passes, run:
 
 ```bash
 npm run probe
 ```
 
-The probe uses `OAUTH_ISSUER` as the public base URL when configured, otherwise it checks the local `PORT`. It verifies health/readiness, favicon handling, the admin auth gate, OAuth discovery, and the unauthenticated MCP challenge without printing secrets.
+The full probe requires `/ready` to return 200. Both probes use `OAUTH_ISSUER` as the public base URL when configured, otherwise they check the local `PORT`. They verify health/readiness, favicon handling, the admin auth gate, OAuth discovery, and the unauthenticated MCP challenge without printing secrets.
 
 ## Run locally
 
@@ -352,11 +358,13 @@ Email bodies returned by read tools are marked as external/untrusted content. Se
 
 Deploy as a Node.js 22 service or Docker container with outbound access to the configured IMAP and SMTP endpoints.
 
-Inject secrets through the hosting platform. Never bake a populated `.env` into the image.
+Inject secrets through the hosting platform. Never bake a populated `.env` into the image. The Docker image can also load a runtime-mounted `/app/.env`; externally injected environment variables continue to take precedence.
 
-For non-Docker production deployments, set `NODE_ENV=production`. The public MCP endpoint must be HTTPS.
+For a direct Node deployment behind same-host Nginx, use `CONNECTOR_BIND_HOST=127.0.0.1`. For Docker behind same-host Nginx, use `CONNECTOR_BIND_HOST=0.0.0.0` inside the container and publish only to host loopback (for example `127.0.0.1:3000:3000`). The Docker healthcheck follows the configured `PORT` instead of assuming port 3000.
 
-Current production guidance remains single process / single replica because idempotency state is in memory.
+For non-Docker production deployments, set `NODE_ENV=production`. The public MCP endpoint must be HTTPS. See `docs/DEPLOY.md` for the deployment sequence and `docs/NGINX.md` for the reverse proxy.
+
+Current production guidance remains single process / single replica because the default idempotency state is in memory.
 
 ## Verification before real outreach
 

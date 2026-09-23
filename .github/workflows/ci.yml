@@ -63,6 +63,7 @@ jobs:
           curl --fail --silent --user admin:admin-password-1234 http://127.0.0.1:3100/admin | grep '<script src="/admin/app.js" defer></script>'
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:3100/admin/app.js)" = "401"
           curl --fail --silent --user admin:admin-password-1234 http://127.0.0.1:3100/admin/app.js | grep 'cards.replaceChildren'
+          DEPLOY_BASE_URL=http://127.0.0.1:3100 npm run probe:base
           DEPLOY_BASE_URL=http://127.0.0.1:3100 npm run probe
           set +e
           timeout 5s node dist/src/server.js >"${RUNNER_TEMP}/port-conflict.log" 2>&1
@@ -80,3 +81,24 @@ jobs:
         run: npm audit --audit-level=moderate
       - name: Build production container
         run: docker build -t creator-outreach-engine:ci .
+      - name: Smoke-test production container
+        run: |
+          docker run --rm -d --name creator-outreach-engine-ci \
+            -p 127.0.0.1:3101:3101 \
+            -e PORT=3101 \
+            -e NODE_ENV=production \
+            -e CONNECTOR_BIND_HOST=0.0.0.0 \
+            -e CONNECTOR_ALLOWED_HOSTS=127.0.0.1 \
+            -e CONNECTOR_AUTH_TOKEN=1234567890abcdef1234567890abcdef \
+            -e MAIL_USERNAME=smoke@example.com \
+            -e MAIL_APP_PASSWORD=smoke-password \
+            -e MAIL_FROM_NAME=Smoke \
+            creator-outreach-engine:ci
+          trap 'docker rm -f creator-outreach-engine-ci >/dev/null 2>&1 || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3101/health >/dev/null; then break; fi
+            sleep 0.25
+          done
+          curl --fail --silent http://127.0.0.1:3101/health | grep '"ok":true'
+          curl --fail --silent http://127.0.0.1:3101/ready | grep '"ok":true'
+          test "$(docker inspect --format='{{.State.Running}}' creator-outreach-engine-ci)" = "true"

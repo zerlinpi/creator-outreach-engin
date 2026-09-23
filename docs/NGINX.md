@@ -34,10 +34,18 @@ location ~ ^/(?:\.env(?:\.|$)|\.git(?:/|$)|package(?:-lock)?\.json$|data(?:/|$)|
 
 The public routes that must still reach Node include `/admin`, `/admin/app.js`, `/admin/api/*`, `/mcp`, `/health`, `/ready`, `/.well-known/*`, and `/oauth/*`.
 
-After reloading Nginx and restarting the Node service, run:
+After reloading Nginx and restarting the Node service, run the base deployment probe first:
+
+```bash
+npm run probe:base
+```
+
+The base probe accepts either HTTP 200 or 503 from `/ready`, so it can validate a fresh deployment before the first mailbox is added. After at least one mailbox is configured and tested, run:
 
 ```bash
 npm run probe
 ```
 
-A successful probe confirms the main HTTP/OAuth/MCP routes and fails if common deployment files become publicly readable.
+The full probe requires `/ready` to return HTTP 200. Both probes validate the main HTTP/OAuth/MCP routes and fail if common deployment files become publicly readable.
+
+For a Node process running directly on the same host as Nginx, use `CONNECTOR_BIND_HOST=127.0.0.1`. For Docker, do **not** bind Node to container loopback; use `CONNECTOR_BIND_HOST=0.0.0.0` inside the container and publish the container port only to host loopback, for example `127.0.0.1:3000:3000`.

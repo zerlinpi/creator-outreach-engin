@@ -17,14 +17,27 @@ async function expectStatus(path, expected, init) {
   return response;
 }
 
+async function expectOneOfStatuses(path, expected, init) {
+  const response = await request(path, init);
+  if (!response) return null;
+  if (!expected.includes(response.status)) {
+    failures.push(path + ': expected HTTP ' + expected.join(' or ') + ', got ' + response.status);
+  }
+  return response;
+}
+
 const health = await expectStatus('/health', 200);
 if (health) {
   const body = await health.json().catch(() => null);
   if (!body || body.ok !== true || body.service !== 'campx-creator-mail') failures.push('/health: unexpected response body');
 }
 
-const requireReady = process.env.PROBE_REQUIRE_READY !== 'false';
-await expectStatus('/ready', requireReady ? 200 : 503);
+const allowUnready = process.argv.includes('--allow-unready') || process.env.PROBE_REQUIRE_READY === 'false';
+if (allowUnready) {
+  await expectOneOfStatuses('/ready', [200, 503]);
+} else {
+  await expectStatus('/ready', 200);
+}
 await expectStatus('/favicon.ico', 204);
 
 const adminEnabled = Boolean(process.env.MAIL_ADMIN_PASSWORD && process.env.MAIL_ACCOUNT_STORE_KEY);
