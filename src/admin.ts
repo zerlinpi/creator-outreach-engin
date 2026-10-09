@@ -156,15 +156,25 @@ function applyFilters(){
     threadList.append(row);
   }
 }
-async function openMessage(t){
+async function openMessage(t,ref=t.latest.id){
   detail.replaceChildren(el('div','muted','Loading message…'));
   try{
-    const j=await request('/messages?account='+encodeURIComponent(t.account)+'&ref='+encodeURIComponent(t.latest.id));
+    const j=await request('/messages?account='+encodeURIComponent(t.account)+'&ref='+encodeURIComponent(ref));
     const m=j.message;
     const header=el('div','detail-head');
     header.append(el('span','chip account-chip',t.account),el('span','chip stage-'+t.stage,stageLabel(t)));
     const content=el('div','detail-content');
-    content.append(header,el('h2','',m.subject||'(No subject)'),el('p','detail-meta','From: '+m.from.join(', ')),el('p','detail-meta','To: '+m.to.join(', ')),el('p','detail-meta',new Date(m.date).toLocaleString()));
+    content.append(header,el('h2','',m.subject||'(No subject)'));
+    const history=el('div','history');
+    history.append(el('h3','','Conversation activity ('+t.activity.length+' sampled messages)'));
+    for(const item of t.activity){
+      const action=el('button','history-item '+(item.id===ref?'active':''));action.type='button';
+      action.append(el('strong','',item.direction==='outbound'?'Sent':'Received'),el('span','date',new Date(item.date).toLocaleString()));
+      action.append(el('span','history-preview',item.preview||item.from));
+      action.addEventListener('click',()=>void openMessage(t,item.id));
+      history.append(action);
+    }
+    content.append(history,el('p','detail-meta','From: '+m.from.join(', ')),el('p','detail-meta','To: '+m.to.join(', ')),el('p','detail-meta',new Date(m.date).toLocaleString()));
     content.append(el('pre','email-body',m.text||'(No plain-text content)'));
     detail.replaceChildren(content);
   }catch(e){detail.replaceChildren(el('p','error',e instanceof Error?e.message:'Message unavailable'))}
@@ -217,7 +227,7 @@ button{border:0;border-radius:9px;padding:10px 15px;cursor:pointer;font-weight:6
 input,select{width:100%;padding:10px 11px;border:1px solid #d4deea;border-radius:9px;background:white;color:#25324b;font:inherit}
 .thread-list{max-height:70vh;overflow:auto}.thread{width:100%;border:0;border-bottom:1px solid #edf0f6;border-radius:0;background:white;display:flex;text-align:left;padding:15px;gap:12px}.thread:hover{background:#f5f8ff}.thread.is-unread .thread-sub{font-weight:750}.thread-content{display:block;min-width:0;flex:1}.thread-top{display:flex;justify-content:space-between;gap:8px;font-size:13px}.date{color:var(--muted);font-size:11px;white-space:nowrap}.thread-sub,.thread-preview{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:5px}.thread-preview{font-size:12px;color:#718096}.thread-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.avatar{border-radius:12px;background:#edf3ff;color:#456ce5;font-weight:800;display:grid;place-items:center;width:38px;height:38px;flex:none}
 .chip,.badge{display:inline-flex;align-items:center;background:#f0f3f8;color:#4d617b;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:700}.account-chip{background:#e9efff;color:#315bc7}.warning,.stage-awaiting_reply,.stage-followed_up{background:#fff3d7;color:#93600b}.stage-creator_replied,.stage-replied{background:#dff8ed;color:#08764b}.stage-possible_reply{background:#fff0e8;color:#a54817}.unread{background:#e8eaff;color:#4847bd}
-.detail-content{padding:22px}.detail-head{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}.detail-meta{color:var(--muted);font-size:12px;overflow-wrap:anywhere}.email-body{font:13px/1.7 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;border-top:1px solid var(--line);padding-top:16px;max-height:60vh;overflow:auto}.empty{padding:32px 20px;color:var(--muted);text-align:center}.error{color:#a52727}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px}.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px}.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.addr{font-weight:700;margin:8px 0;overflow-wrap:anywhere}.notice{background:#f1f6ff;border:1px solid #d6e3ff;padding:12px;border-radius:10px;margin:18px 0;font-size:13px}.status{min-height:22px;margin:10px 0;font-size:12px;line-height:1.6}
+.history{border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:14px 0}.history h3{font-size:12px;color:var(--muted);margin:0;padding:10px 12px;background:#f7f9fd}.history-item{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:5px;width:100%;border-radius:0;background:#fff;text-align:left;border-top:1px solid var(--line);font-size:12px;padding:10px 12px}.history-item:hover,.history-item.active{background:#edf3ff}.history-preview{display:block;color:var(--muted);flex-basis:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.detail-content{padding:22px}.detail-head{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}.detail-meta{color:var(--muted);font-size:12px;overflow-wrap:anywhere}.email-body{font:13px/1.7 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;border-top:1px solid var(--line);padding-top:16px;max-height:60vh;overflow:auto}.empty{padding:32px 20px;color:var(--muted);text-align:center}.error{color:#a52727}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px}.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px}.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.addr{font-weight:700;margin:8px 0;overflow-wrap:anywhere}.notice{background:#f1f6ff;border:1px solid #d6e3ff;padding:12px;border-radius:10px;margin:18px 0;font-size:13px}.status{min-height:22px;margin:10px 0;font-size:12px;line-height:1.6}
 dialog{border:0;border-radius:16px;box-shadow:0 20px 70px #0003;width:min(680px,94vw);max-height:88vh;overflow:auto}form{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{font-size:13px;font-weight:650}label span{display:block;margin-bottom:5px}.full{grid-column:1/-1}
 @media(max-width:1100px){.work-area{grid-template-columns:1fr}.thread-list{max-height:50vh}.metrics{grid-template-columns:repeat(2,1fr)}}@media(max-width:700px){.shell{display:block}.sidebar{position:static;height:auto;padding:12px;display:flex;align-items:center;gap:8px}.brand{padding:0 10px 0 0;font-size:13px}.sidebar-note{display:none}.navitem{width:auto;font-size:12px}.wrap{padding:20px 12px}.heading{align-items:flex-start;flex-direction:column}form{grid-template-columns:1fr}.full{grid-column:1}.bar{align-items:flex-start;flex-direction:column}.grid{grid-template-columns:1fr}.date{max-width:115px;overflow:hidden;text-overflow:ellipsis}}
 </style></head><body><div class="shell"><aside class="sidebar"><div class="brand"><span class="logo">CO</span> Outreach Desk</div><button type="button" id="viewInbox" class="navitem selected">Inbox &amp; Follow-ups</button><button type="button" id="viewMailboxes" class="navitem">Connected mailboxes</button><p class="sidebar-note">A read-only view of recent inbound and sent messages across your connected accounts.</p></aside><main class="wrap">
