@@ -91,3 +91,29 @@ Every message must name its sender in multi-account batch mode. Different accoun
 Use `GET /health` for process liveness and `GET /ready` for mailbox readiness. After building, run `npm run doctor` to test each configured IMAP/SMTP account without sending mail; it no longer rebuilds or deletes production `dist/`. Run `npm run probe` after deployment to verify the public HTTP/OAuth/MCP surface.
 
 Production guidance remains single replica because idempotency state is process-local.
+
+
+## Unified inbox and outreach status (read-only)
+
+Open `/admin` and choose **Inbox & Follow-ups**. The dashboard now reads the most recent **25 messages per account from each INBOX and Sent folder** (bounded at 40 per folder through `GET /admin/api/outreach?account=all&limit=25`). It combines accounts only in the display; it never combines two different accounts into one conversation. Select a contact to read the latest message via `GET /admin/api/messages?account=<id>&ref=<message-ref>`. Message text is rendered as inert plain text, not sender-provided HTML. Existing mailbox configuration, diagnostics and MCP tools remain unchanged.
+
+The interface adapts the mobile-friendly navigation, cards and information hierarchy of [fantastic-mobile/basic](https://github.com/fantastic-mobile/basic), **without installing Vue or copying its runtime**. The existing CSP, Basic authentication, and same-origin write restrictions still apply.
+
+Stages are computed from the sampled IMAP messages and are **not editable CRM notes**:
+
+| Stage | Observation in the sampled folders |
+| --- | --- |
+| Just contacted | One outbound message, fewer than 48 hours ago; no inbound counterpart in the sample |
+| Awaiting reply | One outbound message at least 48 hours ago; no inbound counterpart in the sample |
+| Followed up | Multiple outbound messages for the same recipient/normalized subject, no later reply observed |
+| Just replied | Latest inbound message explicitly links to an outbound Message-ID and is within 48 hours |
+| Replied | Latest inbound message explicitly links to an outbound Message-ID and is older than 48 hours |
+| We replied | The latest message is outbound and the scan includes earlier inbound mail |
+| Possible reply | Inbound and outbound share a participant and normalized subject, but the inbound has no matching In-Reply-To/References |
+| Incoming | No matching outbound message was seen in the sample |
+
+**Follow-up due** flags a conversation when an outbound message is at least 72 hours old and no newer inbound message was observed. It is a **review prompt**, not proof the person did not reply. The grouping key is sender account + external participant + normalized subject, so separate conversations with identical subjects may be grouped. Automatic classification cannot establish the full lifetime history when older messages fall outside the scan, emails were archived/moved, or message headers are unavailable. Do not use the counter as an exact outreach CRM conversion metric.
+
+The response includes `limitedHistory: true` and per-folder errors. A failing INBOX or Sent scan causes that account to be excluded from the inferred-stage view, rather than incorrectly marked as unanswered. Refresh is manual to avoid continuous IMAP load. The API is intended for a single-operator read-only overview, not a persistent CRM or an IMAP-wide full-text index. It will not send messages or automatically schedule follow-ups.
+
+**Next iteration only if needed:** implement a durable sync/index with IMAP incremental UID tracking, reliable thread IDs, explicit per-thread notes/assignment, pagination, and a persisted follow-up workflow after real-mail provider acceptance tests. These are intentionally excluded here to avoid introducing unverified database complexity.
