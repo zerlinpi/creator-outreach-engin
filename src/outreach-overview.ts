@@ -27,6 +27,7 @@ export interface OutreachConversation {
   lastActivity: string;
   lastDirection: 'inbound' | 'outbound';
   latest: SearchEmailSummary;
+  activity: Array<{ id: string; date: string; direction: 'inbound' | 'outbound'; from: string; preview: string }>;
   /** Subject + participant grouping is approximate, not an RFC conversation ID. */
   approximateGrouping: true;
 }
@@ -120,6 +121,13 @@ export function classifyOutreachMessages(
       lastActivity: latest.message.date.toISOString(),
       lastDirection: latest.outbound ? 'outbound' as const : 'inbound' as const,
       latest: toSearchSummary(latest.message),
+      activity: group.map((item) => ({
+        id: item.message.id,
+        date: item.message.date.toISOString(),
+        direction: item.outbound ? 'outbound' as const : 'inbound' as const,
+        from: item.message.from.slice(0, 2).join(', '),
+        preview: toSearchSummary(item.message).preview
+      })),
       approximateGrouping: true as const
     };
   }).sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
