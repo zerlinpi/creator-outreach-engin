@@ -251,4 +251,75 @@ describe('Mailbox Manager admin UI', () => {
     });
     expect(isolatedClient.status).toBe(200);
   });
+  it('serves protected unified inbox, scans real account runtimes, and bounds message previews', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'outreach-admin-')); dirs.push(dir);
+    const config = loadConfig({
+      CONNECTOR_AUTH_TOKEN: '1234567890abcdef1234567890abcdef',
+      CONNECTOR_ALLOWED_HOSTS: '127.0.0.1',
+      MAIL_ADMIN_PASSWORD: 'admin-password:1234',
+      MAIL_ACCOUNT_STORE_KEY: '0123456789abcdef0123456789abcdef',
+      MAIL_ACCOUNT_STORE_PATH: join(dir, 'accounts.json')
+    });
+    const message = {
+      id: 'message-ref', mailbox: 'INBOX', uid: 1, account: 'campaign',
+      from: ['creator@example.com'], to: ['campaign@example.com'], cc: [],
+      subject: '<svg onload=alert(1)>', date: new Date('2026-10-09T02:00:00Z'),
+      text: '<script>alert(1)</script>Hi', html: '<img src=x onerror=alert(1)>',
+      messageId: '<r1@example.com>', inReplyTo: '<s1@example.com>',
+      references: ['<s1@example.com>'], attachments: [], unread: true
+    };
+    const sent = {
+      ...message, id: 'sent-ref', mailbox: 'Sent',
+      from: ['campaign@example.com'], to: ['creator@example.com'], unread: false,
+      date: new Date('2026-10-08T01:00:00Z'), messageId: '<s1@example.com>', inReplyTo: null, references: []
+    };
+    const registry = new MailAccountRegistry([{
+      id: 'campaign', address: 'campaign@example.com', fromName: 'Campaign', source: 'environment',
+      imap: {
+        searchEmails: async ({ mailbox }: { mailbox: string }) => mailbox === 'SENT' ? [sent] : [message],
+        getEmail: async (ref: string) => {
+          if (ref !== 'message-ref') throw new Error('Unknown ref');
+          return message;
+        }
+      },
+      smtp: {}
+    } as any]);
+    const store = new EncryptedAccountStore(config.mailAdmin!.storePath, config.mailAdmin!.storeKey);
+    const app = createHttpApp({
+      authToken: config.authToken, registry, allowedHosts: ['127.0.0.1'],
+      admin: config.mailAdmin, accountStore: store, baseConfig: config
+    });
+    const server = app.listen(0, '127.0.0.1'); servers.push(server);
+    await once(server, 'listening');
+    const root = 'http://127.0.0.1:' + (server.address() as AddressInfo).port;
+    const auth = { authorization: 'Basic ' + Buffer.from('admin:admin-password:1234').toString('base64') };
+
+    expect((await fetch(root + '/admin/api/outreach')).status).toBe(401);
+    expect((await fetch(root + '/admin/inbox.js')).status).toBe(401);
+    const js = await (await fetch(root + '/admin/inbox.js', { headers: auth })).text();
+    expect(() => new Script(js)).not.toThrow();
+    expect(js).not.toContain('innerHTML');
+    const html = await (await fetch(root + '/admin', { headers: auth })).text();
+    expect(html).toContain('id="inboxSection"');
+    expect(html).toContain('<script src="/admin/inbox.js" defer></script>');
+
+    const scan = await fetch(root + '/admin/api/outreach?account=all&limit=25', { headers: auth });
+    expect(scan.status).toBe(200);
+    const data = await scan.json() as any;
+    expect(data.errors).toHaveLength(0);
+    expect(data.conversations).toHaveLength(1);
+    expect(data.conversations[0]).toMatchObject({ account: 'campaign', stage: 'creator_replied', unread: true });
+    expect(data.conversations[0].latest).not.toHaveProperty('html');
+    expect((await fetch(root + '/admin/api/outreach?limit=41', { headers: auth })).status).toBe(400);
+    expect((await fetch(root + '/admin/api/outreach?account=notfound', { headers: auth })).status).toBe(404);
+
+    const selected = await fetch(root + '/admin/api/messages?account=campaign&ref=message-ref', { headers: auth });
+    expect(selected.status).toBe(200);
+    const detail = await selected.json() as any;
+    expect(detail.message.text).toContain('<script>alert(1)</script>');
+    expect(detail.message).not.toHaveProperty('html');
+    expect((await fetch(root + '/admin/api/messages?account=other&ref=message-ref', { headers: auth })).status).toBe(404);
+    expect((await fetch(root + '/admin/api/messages?account=campaign', { headers: auth })).status).toBe(400);
+  });
+
 });
