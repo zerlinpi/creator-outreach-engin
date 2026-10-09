@@ -8,6 +8,8 @@ import { createMailAccountRuntime, type MailAccountRegistry } from './mail/accou
 import { EncryptedAccountStore } from './mail/account-store.js';
 import { isHostnameOrIpv4 } from './network.js';
 import { ConnectorError } from './errors.js';
+import { loadOutreachOverview } from './outreach-overview.js';
+import { toEmailView } from './mail/presenters.js';
 
 const AccountIdSchema = z.string().regex(/^[a-z][a-z0-9_]{0,31}$/);
 const HostSchema = z.string().trim().min(1).max(253).refine(
@@ -123,28 +125,115 @@ form.addEventListener('submit',async e=>{e.preventDefault();formStatus.textConte
 load().catch(e=>{summary.textContent=e instanceof Error?e.message:'Mailbox list failed'});`;
 }
 
+function inboxScript(): string {
+  return `const ui=id=>document.getElementById(id);
+const inbox=ui('inboxSection'),settings=ui('mailboxesSection'),threadList=ui('threadList'),detail=ui('messageDetail');
+let threads=[],scan=null,loaded=false,filter='all';
+const stageNames={new_contact:'Just contacted',awaiting_reply:'Awaiting reply',followed_up:'Followed up',creator_replied:'Just replied',replied:'Replied',we_replied:'We replied',possible_reply:'Possible reply',inbound:'Incoming'};
+function el(tag,cls,value){const node=document.createElement(tag);if(cls)node.className=cls;if(value!==undefined)node.textContent=String(value);return node}
+function switchTab(tab){const showInbox=tab==='inbox';inbox.hidden=!showInbox;settings.hidden=showInbox;ui('viewInbox').className=showInbox?'navitem selected':'navitem';ui('viewMailboxes').className=showInbox?'navitem':'navitem selected';if(showInbox&&!loaded)void loadThreads()}
+async function request(path){const r=await fetch('/admin/api'+path);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Request failed');return j}
+function stageLabel(t){return t.stage==='awaiting_reply'&&t.needsAttention?'No reply observed':stageNames[t.stage]||'Unknown'}
+function applyFilters(){
+  const chosen=ui('accountFilter').value,query=ui('threadSearch').value.trim().toLowerCase();
+  const shown=threads.filter(t=>(chosen==='all'||t.account===chosen)&&(filter==='all'||(filter==='attention'?t.needsAttention:t.stage===filter))&&(!query||(t.participant+' '+t.subject+' '+t.latest.preview+' '+t.account).toLowerCase().includes(query)));
+  threadList.replaceChildren();
+  ui('resultCount').textContent=shown.length+' conversations shown';
+  if(!shown.length){threadList.append(el('div','empty','No messages in this view. Refresh or change the filters.'));return}
+  for(const t of shown){
+    const row=el('button','thread '+(t.unread?'is-unread':''));row.type='button';
+    const avatar=el('span','avatar',t.participant.charAt(0).toUpperCase());
+    const content=el('span','thread-content'),top=el('span','thread-top');
+    top.append(el('strong','',t.participant),el('span','date',new Date(t.lastActivity).toLocaleString()));
+    const sub=el('span','thread-sub',t.subject);
+    const preview=el('span','thread-preview',t.latest.preview||'No text preview');
+    const meta=el('span','thread-meta');
+    meta.append(el('span','chip account-chip',t.account),el('span','chip stage-'+t.stage,stageLabel(t)));
+    if(t.needsAttention)meta.append(el('span','chip warning','Follow-up due'));
+    if(t.unread)meta.append(el('span','chip unread','Unread'));
+    content.append(top,sub,preview,meta);row.append(avatar,content);
+    row.addEventListener('click',()=>void openMessage(t));
+    threadList.append(row);
+  }
+}
+async function openMessage(t){
+  detail.replaceChildren(el('div','muted','Loading message…'));
+  try{
+    const j=await request('/messages?account='+encodeURIComponent(t.account)+'&ref='+encodeURIComponent(t.latest.id));
+    const m=j.message;
+    const header=el('div','detail-head');
+    header.append(el('span','chip account-chip',t.account),el('span','chip stage-'+t.stage,stageLabel(t)));
+    const content=el('div','detail-content');
+    content.append(header,el('h2','',m.subject||'(No subject)'),el('p','detail-meta','From: '+m.from.join(', ')),el('p','detail-meta','To: '+m.to.join(', ')),el('p','detail-meta',new Date(m.date).toLocaleString()));
+    content.append(el('pre','email-body',m.text||'(No plain-text content)'));
+    detail.replaceChildren(content);
+  }catch(e){detail.replaceChildren(el('p','error',e instanceof Error?e.message:'Message unavailable'))}
+}
+async function loadThreads(){
+  ui('refreshThreads').disabled=true;ui('threadStatus').textContent='Reading connected inboxes and Sent folders…';
+  try{
+    const data=await request('/outreach?account=all&limit=25');
+    threads=data.conversations;scan=data;loaded=true;
+    const choices=ui('accountFilter'),prior=choices.value;
+    choices.replaceChildren();
+    const all=el('option','','All accounts');all.value='all';choices.append(all);
+    const ids=[...new Set(threads.map(t=>t.account).concat(data.errors.map(e=>e.account)))].sort();
+    for(const id of ids){const option=el('option','',id);option.value=id;choices.append(option)}
+    choices.value=ids.includes(prior)?prior:'all';
+    ui('metricThreads').textContent=String(threads.length);
+    ui('metricAttention').textContent=String(threads.filter(t=>t.needsAttention).length);
+    ui('metricReplies').textContent=String(threads.filter(t=>t.stage==='creator_replied'||t.stage==='replied').length);
+    ui('metricUnread').textContent=String(threads.filter(t=>t.unread).length);
+    const warning=data.errors.length?' · '+data.errors.map(e=>e.account+'/'+e.folder+' unavailable').join(', '):'';
+    ui('threadStatus').textContent='Updated '+new Date(data.generatedAt).toLocaleTimeString()+' · Latest '+data.perFolderLimit+' messages per folder and account; older history not checked.'+warning;
+    ui('threadStatus').className=data.errors.length?'status error':'status muted';
+    applyFilters();
+  }catch(e){ui('threadStatus').textContent=e instanceof Error?e.message:'Unable to load inbox';ui('threadStatus').className='status error'}
+  finally{ui('refreshThreads').disabled=false}
+}
+ui('viewInbox').addEventListener('click',()=>switchTab('inbox'));
+ui('viewMailboxes').addEventListener('click',()=>switchTab('mailboxes'));
+ui('refreshThreads').addEventListener('click',()=>void loadThreads());
+ui('accountFilter').addEventListener('change',applyFilters);
+ui('threadSearch').addEventListener('input',applyFilters);
+ui('stageFilter').addEventListener('change',()=>{filter=ui('stageFilter').value;applyFilters()});
+switchTab('inbox');`;
+}
+
 function html(): string {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Mailbox Manager</title>
 <style>
-body{font-family:Inter,system-ui,sans-serif;margin:0;background:#f6f7f9;color:#1d2329}.wrap{max-width:1180px;margin:40px auto;padding:0 20px}
-h1{margin:0 0 8px;font-size:30px}.muted{color:#667085}.bar{display:flex;justify-content:space-between;align-items:center;margin:24px 0}
-button{border:0;border-radius:9px;padding:10px 15px;cursor:pointer;font-weight:650}.primary{background:#111827;color:#fff}.ghost{background:#fff;border:1px solid #d0d5dd}.danger{color:#b42318;background:#fff;border:1px solid #fecdca}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px}.card{background:#fff;border:1px solid #e4e7ec;border-radius:14px;padding:18px}
-.badge{display:inline-block;font-size:12px;background:#f2f4f7;border-radius:999px;padding:4px 8px;margin-right:6px}.default{background:#ecfdf3;color:#027a48}
-.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.addr{font-weight:700;margin:8px 0}.small{font-size:13px;color:#667085}
-dialog{border:0;border-radius:16px;box-shadow:0 20px 70px #0003;width:min(680px,94vw)}form{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{font-size:13px;font-weight:650}
-label span{display:block;margin-bottom:5px}input,select{width:100%;box-sizing:border-box;padding:10px;border:1px solid #d0d5dd;border-radius:8px}.full{grid-column:1/-1}
-.notice{background:#fffaeb;border:1px solid #fedf89;padding:12px;border-radius:10px;margin:18px 0;font-size:13px}
-.status{min-height:22px;margin-top:10px;font-size:13px}
-@media(max-width:640px){.wrap{margin:22px auto}form{grid-template-columns:1fr}.full{grid-column:1}.bar{align-items:flex-start;gap:12px;flex-direction:column}}
-</style></head><body><div class="wrap">
-<h1>Mailbox Manager</h1><div class="muted">Add and manage sender mailboxes. Passwords are encrypted at rest and never exposed to AI.</div>
+:root{color-scheme:light;--bg:#f6f8fc;--panel:#fff;--line:#e5eaf1;--muted:#667085;--nav:#172339;--accent:#396bfa}
+*{box-sizing:border-box}body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;margin:0;background:var(--bg);color:#202b3f;font-size:14px}
+[hidden]{display:none!important}.shell{min-height:100vh;display:grid;grid-template-columns:226px minmax(0,1fr)}.sidebar{background:var(--nav);color:#f5f7fc;padding:28px 14px;position:sticky;top:0;height:100vh}.brand{display:flex;align-items:center;gap:12px;font-size:17px;font-weight:750;padding:4px 12px 30px}.logo{background:#5078ef;border-radius:11px;padding:8px;color:#fff}.navitem{display:block;width:100%;text-align:left;border-radius:10px;background:transparent;color:#b6c4dc;margin:3px 0;padding:12px 14px}.navitem:hover,.navitem.selected{background:#304363;color:#fff}.sidebar-note{margin:26px 12px;color:#a7b6cd;font-size:12px;line-height:1.7}
+.wrap{max-width:1560px;width:100%;margin:0 auto;padding:32px clamp(16px,3vw,44px)}h1{margin:0 0 7px;font-size:26px;letter-spacing:-.6px}h2{font-size:18px;margin:0 0 18px}.muted,.small{color:var(--muted)}.small{font-size:12px}.heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:25px;gap:14px}.eyebrow{text-transform:uppercase;letter-spacing:.12em;font-size:11px;color:#7e8ca4;font-weight:800}.bar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:24px 0}
+button{border:0;border-radius:9px;padding:10px 15px;cursor:pointer;font-weight:650;font:inherit}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #a4b8ff;outline-offset:2px}
+.primary{background:#305fe6;color:#fff}.primary:hover{background:#244fce}.ghost{background:#fff;border:1px solid #cbd5e1}.danger{color:#b42318;background:#fff;border:1px solid #fecdca}
+.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}.metric{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:18px}.metric strong{display:block;font-size:28px;margin-top:9px}.metric span{color:#667085}
+.work-area{display:grid;grid-template-columns:minmax(320px,1.15fr) minmax(300px,.85fr);gap:16px;align-items:start}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;min-width:0;overflow:hidden}.panel-title{padding:18px;border-bottom:1px solid var(--line);font-weight:750;display:flex;justify-content:space-between;align-items:center}
+.filters{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:15px;border-bottom:1px solid var(--line)}.filters .search{grid-column:1/-1}
+input,select{width:100%;padding:10px 11px;border:1px solid #d4deea;border-radius:9px;background:white;color:#25324b;font:inherit}
+.thread-list{max-height:70vh;overflow:auto}.thread{width:100%;border:0;border-bottom:1px solid #edf0f6;border-radius:0;background:white;display:flex;text-align:left;padding:15px;gap:12px}.thread:hover{background:#f5f8ff}.thread.is-unread .thread-sub{font-weight:750}.thread-content{display:block;min-width:0;flex:1}.thread-top{display:flex;justify-content:space-between;gap:8px;font-size:13px}.date{color:var(--muted);font-size:11px;white-space:nowrap}.thread-sub,.thread-preview{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:5px}.thread-preview{font-size:12px;color:#718096}.thread-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.avatar{border-radius:12px;background:#edf3ff;color:#456ce5;font-weight:800;display:grid;place-items:center;width:38px;height:38px;flex:none}
+.chip,.badge{display:inline-flex;align-items:center;background:#f0f3f8;color:#4d617b;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:700}.account-chip{background:#e9efff;color:#315bc7}.warning,.stage-awaiting_reply,.stage-followed_up{background:#fff3d7;color:#93600b}.stage-creator_replied,.stage-replied{background:#dff8ed;color:#08764b}.stage-possible_reply{background:#fff0e8;color:#a54817}.unread{background:#e8eaff;color:#4847bd}
+.detail-content{padding:22px}.detail-head{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}.detail-meta{color:var(--muted);font-size:12px;overflow-wrap:anywhere}.email-body{font:13px/1.7 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;border-top:1px solid var(--line);padding-top:16px;max-height:60vh;overflow:auto}.empty{padding:32px 20px;color:var(--muted);text-align:center}.error{color:#a52727}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px}.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px}.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.addr{font-weight:700;margin:8px 0;overflow-wrap:anywhere}.notice{background:#f1f6ff;border:1px solid #d6e3ff;padding:12px;border-radius:10px;margin:18px 0;font-size:13px}.status{min-height:22px;margin:10px 0;font-size:12px;line-height:1.6}
+dialog{border:0;border-radius:16px;box-shadow:0 20px 70px #0003;width:min(680px,94vw);max-height:88vh;overflow:auto}form{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{font-size:13px;font-weight:650}label span{display:block;margin-bottom:5px}.full{grid-column:1/-1}
+@media(max-width:1100px){.work-area{grid-template-columns:1fr}.thread-list{max-height:50vh}.metrics{grid-template-columns:repeat(2,1fr)}}@media(max-width:700px){.shell{display:block}.sidebar{position:static;height:auto;padding:12px;display:flex;align-items:center;gap:8px}.brand{padding:0 10px 0 0;font-size:13px}.sidebar-note{display:none}.navitem{width:auto;font-size:12px}.wrap{padding:20px 12px}.heading{align-items:flex-start;flex-direction:column}form{grid-template-columns:1fr}.full{grid-column:1}.bar{align-items:flex-start;flex-direction:column}.grid{grid-template-columns:1fr}.date{max-width:115px;overflow:hidden;text-overflow:ellipsis}}
+</style></head><body><div class="shell"><aside class="sidebar"><div class="brand"><span class="logo">CO</span> Outreach Desk</div><button type="button" id="viewInbox" class="navitem selected">Inbox &amp; Follow-ups</button><button type="button" id="viewMailboxes" class="navitem">Connected mailboxes</button><p class="sidebar-note">A read-only view of recent inbound and sent messages across your connected accounts.</p></aside><main class="wrap">
+<section id="inboxSection">
+<div class="heading"><div><div class="eyebrow">Creator outreach</div><h1>Unified inbox</h1><div class="muted">Track incoming replies, new contacts, and follow-up needs across brands.</div></div><button id="refreshThreads" class="primary" type="button">Refresh inbox</button></div>
+<div class="metrics"><div class="metric"><span>Conversations</span><strong id="metricThreads">—</strong></div><div class="metric"><span>Follow-up due</span><strong id="metricAttention">—</strong></div><div class="metric"><span>Observed replies</span><strong id="metricReplies">—</strong></div><div class="metric"><span>Unread threads</span><strong id="metricUnread">—</strong></div></div>
+<div id="threadStatus" class="status muted">Loading recent mail…</div>
+<div class="work-area"><section class="panel"><div class="panel-title">Conversations <span id="resultCount" class="small"></span></div><div class="filters"><input id="threadSearch" class="search" aria-label="Search conversations" placeholder="Search contact, subject or preview"><select id="accountFilter" aria-label="Filter by account"><option value="all">All accounts</option></select><select id="stageFilter" aria-label="Filter by status"><option value="all">All statuses</option><option value="attention">Follow-up due</option><option value="new_contact">Just contacted</option><option value="awaiting_reply">Awaiting reply</option><option value="followed_up">Followed up</option><option value="creator_replied">Just replied</option><option value="replied">Replied</option><option value="we_replied">We replied</option><option value="possible_reply">Possible reply</option><option value="inbound">Incoming</option></select></div><div id="threadList" class="thread-list" aria-live="polite"></div></section>
+<section class="panel"><div class="panel-title">Message detail</div><div id="messageDetail" class="empty">Select a conversation to view its latest message. Plain text only; external HTML is never rendered.</div></section></div>
+<p class="small">Status is inferred from recent mail (subject + correspondent). Only matching In-Reply-To/References headers confirm a reply; other matches require review. Older messages outside the scan are not included. Follow-up due means no later reply was observed in the scanned window after 72 hours, not proof a person never replied.</p>
+</section>
+<section id="mailboxesSection" hidden><h1>Mailbox Manager</h1><div class="muted">Add and manage sender mailboxes. Passwords are encrypted at rest and never exposed to AI.</div>
 <div class="notice">AI reads and sends by <b>account id</b>. Keep each id stable. With multiple mailboxes, AI must select an account explicitly for ambiguous reads/writes.</div>
 <div class="bar"><div id="summary" class="muted">Loading…</div><button id="addMailbox" class="primary" type="button">+ Add mailbox</button></div>
 <div id="cards" class="grid"></div>
-</div>
+</section></main></div>
 <dialog id="dlg"><h2 id="dlgTitle">Add mailbox</h2><form id="form">
 <label><span>Account ID</span><input id="id" required pattern="[a-z][a-z0-9_]{0,31}" placeholder="geteen_us"></label>
 <label><span>Provider</span><select id="provider"><option value="aliyun">Alibaba Mail</option><option value="gmail">Gmail</option><option value="outlook">Microsoft 365 / Outlook</option><option value="custom">Custom</option></select></label>
@@ -156,7 +245,7 @@ label span{display:block;margin-bottom:5px}input,select{width:100%;box-sizing:bo
 <label class="full"><span>SMTP security</span><select id="smtpSecurity"><option value="tls">Implicit TLS (usually 465)</option><option value="starttls">STARTTLS (usually 587)</option></select></label>
 <div class="full row"><button id="cancelDialog" type="button" class="ghost">Cancel</button><button class="primary" type="submit">Save mailbox</button></div>
 </form><div id="formStatus" class="status"></div></dialog>
-<script src="/admin/app.js" defer></script></body></html>`;
+<script src="/admin/app.js" defer></script><script src="/admin/inbox.js" defer></script></body></html>`;
 }
 
 export function registerMailboxAdmin(
@@ -175,6 +264,7 @@ export function registerMailboxAdmin(
   };
 
   app.get('/admin/app.js', auth, (_req, res) => res.type('application/javascript').send(clientScript()));
+  app.get('/admin/inbox.js', auth, (_req, res) => res.type('application/javascript').send(inboxScript()));
   app.get('/admin', auth, (_req, res) => res.type('html').send(html()));
   app.use('/admin/api', auth, (req, res, next) => {
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && !isSameOriginMutation(req)) {
@@ -182,6 +272,33 @@ export function registerMailboxAdmin(
     }
     next();
   }, express.json({ limit: '64kb' }));
+
+  app.get('/admin/api/outreach', async (req, res) => {
+    const query = z.object({
+      account: z.union([AccountIdSchema, z.literal('all')]).default('all'),
+      limit: z.coerce.number().int().min(1).max(40).default(25)
+    }).safeParse(req.query);
+    if (!query.success) return res.status(400).json({ error: 'Invalid account or scan limit.' });
+    try {
+      return res.json(await loadOutreachOverview(registry, query.data.account, query.data.limit));
+    } catch (error) {
+      return res.status(error instanceof ConnectorError && error.code === 'ACCOUNT_NOT_FOUND' ? 404 : 502)
+        .json({ error: 'Unable to scan selected mailboxes.' });
+    }
+  });
+
+  app.get('/admin/api/messages', async (req, res) => {
+    const query = z.object({ account: AccountIdSchema, ref: z.string().min(1).max(8192) }).safeParse(req.query);
+    if (!query.success) return res.status(400).json({ error: 'Account and message reference are required.' });
+    try {
+      const message = await registry.resolve(query.data.account).imap.getEmail(query.data.ref);
+      return res.json({ message: toEmailView(message, false, 20_000) });
+    } catch (error) {
+      const code = error instanceof ConnectorError ? error.code : '';
+      return res.status(code === 'ACCOUNT_NOT_FOUND' || code === 'MESSAGE_NOT_FOUND' ? 404 : code === 'ACCOUNT_MISMATCH' ? 400 : 502)
+        .json({ error: 'Message unavailable or does not belong to the selected account.' });
+    }
+  });
 
   app.get('/admin/api/accounts', async (_req, res) => {
     const managed = new Map((await store.list()).map((item) => [item.id, item]));
