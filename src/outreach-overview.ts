@@ -118,7 +118,7 @@ export function classifyOutreachMessages(
       stage, needsAttention, unread: group.some((item) => !item.outbound && item.message.unread),
       sentCount: outgoing.length, receivedCount: received.length,
       lastActivity: latest.message.date.toISOString(),
-      lastDirection: latest.outbound ? 'outbound' : 'inbound',
+      lastDirection: latest.outbound ? 'outbound' as const : 'inbound' as const,
       latest: toSearchSummary(latest.message),
       approximateGrouping: true as const
     };
