@@ -212,6 +212,34 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
     bearer_methods_supported: ['header']
   };
 
+  const renderAuthorizationPage = (
+    clientName: string,
+    scope: string,
+    redirectUri: string,
+    requestId: string,
+    errorMessage = ''
+  ) => `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light"><title>Authorize · Creator Outreach</title>
+<style>
+:root{color-scheme:light;--ink:#172339;--muted:#667085;--line:#e3e8f0;--blue:#315fe8;--bg:#f4f7fb}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at top left,#e7efff 0,transparent 48%),var(--bg);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);display:grid;place-items:center;padding:24px}
+main{width:min(100%,480px)}.brand{display:flex;align-items:center;gap:10px;margin:0 0 18px 4px;color:#334155;font-size:13px;font-weight:750;letter-spacing:.02em}.brand-mark{display:grid;place-items:center;width:34px;height:34px;border-radius:11px;background:var(--ink);color:white;font-weight:800;letter-spacing:-.04em}
+.card{background:#fff;border:1px solid var(--line);border-radius:22px;padding:clamp(22px,5vw,34px);box-shadow:0 20px 60px #17233912}.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.13em;font-weight:800;color:var(--blue)}h1{font-size:clamp(24px,5vw,30px);line-height:1.15;letter-spacing:-.045em;margin:9px 0 12px}p{font-size:14px;line-height:1.65;color:var(--muted);margin:0 0 20px}.app-name{color:var(--ink);font-weight:750;overflow-wrap:anywhere}.permission{border:1px solid var(--line);background:#f8fafc;border-radius:13px;padding:13px 14px;margin:18px 0}.permission-label{display:block;color:var(--muted);font-size:11px;font-weight:750;text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px}.permission code{font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere;color:#334155}.field{margin:20px 0 0}label{display:block;font-size:12px;font-weight:750;margin-bottom:8px}input{width:100%;min-height:46px;padding:12px 13px;border:1px solid #cfd8e5;border-radius:10px;font:inherit;color:var(--ink);background:#fff}input:focus-visible,button:focus-visible{outline:3px solid #b9c9ff;outline-offset:2px}.error{border:1px solid #fecaca;background:#fff5f5;color:#b42318;padding:11px 12px;border-radius:10px;font-size:13px;line-height:1.5;margin:16px 0 0}.actions{display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:20px}button{min-height:44px;padding:11px 16px;border-radius:10px;border:1px solid transparent;font:inherit;font-size:13px;font-weight:750;cursor:pointer}.allow{background:var(--blue);color:white}.allow:hover{background:#254fcf}.deny{background:#fff;border-color:var(--line);color:#475467}.deny:hover{background:#f8fafc}.trust{display:flex;gap:9px;align-items:flex-start;font-size:12px;line-height:1.55;color:var(--muted);margin:18px 0 0}.trust-mark{flex:none;width:18px;height:18px;border-radius:50%;background:#e4f7ed;color:#08764b;display:grid;place-items:center;font-size:11px;font-weight:900}.foot{text-align:center;font-size:11px;color:#8792a5;margin:16px 0 0}
+@media(max-width:420px){body{padding:14px}.card{border-radius:17px}.actions{grid-template-columns:1fr}.deny{grid-row:2}}
+</style></head>
+<body><main><div class="brand"><span class="brand-mark">CO</span><span>CREATOR OUTREACH</span></div>
+<section class="card" aria-labelledby="page-title"><div class="eyebrow">Secure connection</div><h1 id="page-title">Authorize mail access</h1>
+<p><span class="app-name">${escapeHtml(clientName)}</span> is requesting access to the mailboxes configured for Creator Outreach. Review the request before continuing.</p>
+<div class="permission"><span class="permission-label">Requested permission</span><code>${escapeHtml(scope)}</code></div>
+<div class="permission"><span class="permission-label">Redirect destination</span><code>${escapeHtml(redirectUri)}</code></div>
+${errorMessage ? `<div class="error" role="alert">${escapeHtml(errorMessage)}</div>` : ''}
+<form method="post" action="/oauth/authorize">
+<input type="hidden" name="request_id" value="${escapeHtml(requestId)}">
+<div class="field"><label for="oauth-password">Admin authorization password</label><input id="oauth-password" type="password" name="password" required autocomplete="current-password" autofocus></div>
+<div class="actions"><button class="allow" type="submit" name="decision" value="allow">Authorize access</button><button class="deny" type="submit" name="decision" value="deny">Deny</button></div>
+</form><div class="trust"><span class="trust-mark" aria-hidden="true">✓</span><span>Your password is checked by this service and is not sent to the requesting app.</span></div></section><div class="foot">If you did not start this connection, choose Deny.</div></main></body></html>`;
+
   app.use('/oauth/authorize', (_req, res, next) => {
     applySensitiveHeaders(res, { formActionOrigins: ['https://chatgpt.com'] });
     next();
@@ -313,20 +341,7 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
       expiresAt: Date.now() + AUTHORIZATION_TTL_MS
     });
 
-    return res.status(200).type('html').send(`<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Authorize Creator Outreach Mail</title></head>
-<body style="font-family:system-ui,sans-serif;max-width:560px;margin:48px auto;padding:0 20px">
-<h1>Authorize Creator Outreach Mail</h1>
-<p><strong>${escapeHtml(client.name)}</strong> is requesting access to the configured creator-outreach mailboxes.</p>
-<p>Requested scope: <code>${escapeHtml(scope)}</code></p>
-<p>Redirect destination: <code>${escapeHtml(redirectUri)}</code></p>
-<form method="post" action="/oauth/authorize">
-<input type="hidden" name="request_id" value="${escapeHtml(requestId)}">
-<label>Password<br><input type="password" name="password" required autocomplete="current-password" style="width:100%;padding:10px;margin:8px 0 16px"></label>
-<button type="submit" name="decision" value="allow">Authorize</button>
-<button type="submit" name="decision" value="deny">Deny</button>
-</form></body></html>`);
+    return res.status(200).type('html').send(renderAuthorizationPage(client.name, scope, redirectUri, requestId));
   });
 
   app.post('/oauth/authorize', urlencoded, (req, res) => {
@@ -358,7 +373,13 @@ export function registerOAuthRoutes(app: Express, config: OAuthConfig): void {
     const password = typeof req.body?.password === 'string' && req.body.password.length <= 4096 ? req.body.password : '';
     if (!safeEqual(password, config.loginPassword)) {
       loginLimiter.failure(clientKey);
-      return res.status(401).send('Invalid authorization password.');
+      return res.status(401).type('html').send(renderAuthorizationPage(
+        decodeClient(authorization.clientId, config.signingSecret)?.name ?? 'MCP client',
+        authorization.scope,
+        authorization.redirectUri,
+        requestId,
+        'The password was not accepted. Check it and try again.'
+      ));
     }
 
     loginLimiter.success(clientKey);
