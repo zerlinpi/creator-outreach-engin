@@ -156,6 +156,51 @@ describe('OAuth authorization surface', () => {
     expect(authorize.status).toBe(200);
     const authorizeCsp = authorize.headers.get('content-security-policy') ?? '';
     expect(authorizeCsp).toContain("form-action 'self' https://chatgpt.com;");
+    const page = await authorize.text();
+    expect(page).toContain('Secure connection');
+    expect(page).toContain('Authorize mail access');
+    expect(page).toContain('name="password"');
+    expect(page).toContain('name="request_id"');
+    expect(page).toContain('Your password is checked by this service');
+    expect(page).toContain('class="allow"');
+    expect(page).not.toContain('<script');
+  });
+
+  it('keeps the OAuth authorization form available after a wrong password', async () => {
+    const { baseUrl } = await startOAuthApp();
+    const redirectUri = 'https://chatgpt.com/aip/callback';
+    const registration = await fetch(`${baseUrl}/oauth/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ client_name: 'ChatGPT', redirect_uris: [redirectUri], token_endpoint_auth_method: 'none' })
+    });
+    const registered = await registration.json() as { client_id: string };
+    const challenge = createHash('sha256').update('A'.repeat(64)).digest('base64url');
+    const authorizeUrl = new URL(`${baseUrl}/oauth/authorize`);
+    authorizeUrl.searchParams.set('response_type', 'code');
+    authorizeUrl.searchParams.set('client_id', registered.client_id);
+    authorizeUrl.searchParams.set('redirect_uri', redirectUri);
+    authorizeUrl.searchParams.set('scope', 'mcp:mail');
+    authorizeUrl.searchParams.set('code_challenge', challenge);
+    authorizeUrl.searchParams.set('code_challenge_method', 'S256');
+    const authorize = await fetch(authorizeUrl);
+    const page = await authorize.text();
+    const requestId = page.match(/name="request_id" value="([^"]+)"/)?.[1];
+    expect(requestId).toBeTruthy();
+
+    const denied = await fetch(`${baseUrl}/oauth/authorize`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ request_id: requestId!, decision: 'allow', password: 'wrong-password' })
+    });
+    expect(denied.status).toBe(401);
+    const retry = await denied.text();
+    expect(retry).toContain('The password was not accepted');
+    expect(retry).toContain(`name="request_id" value="${requestId}"`);
+    expect(retry).toContain('name="password"');
+    expect(retry).toContain('Authorize access');
+    expect(denied.headers.get('cache-control')).toBe('no-store');
   });
 
   it('rejects a valid access token that lacks the mcp:mail scope', async () => {

@@ -61,6 +61,13 @@ describe('Mailbox Manager admin UI', () => {
     expect(adminHtml).toContain('<script src="/admin/app.js" defer></script>');
     expect(adminHtml).toContain('id="addMailbox"');
     expect(adminHtml).toContain('id="cancelDialog"');
+    expect(adminHtml).toContain('id="passwordToggle"');
+    expect(adminHtml).toContain('id="providerHelp"');
+    expect(adminHtml).toContain('id="saveMailbox"');
+    expect(adminHtml).toContain('Incoming mail · IMAP');
+    expect(adminHtml).toContain('Outgoing mail · SMTP');
+    expect(adminHtml).toContain('Stored encrypted at rest.');
+    expect(adminHtml).toContain('dialog-head');
 
     expect((await fetch(root + '/admin/app.js')).status).toBe(401);
     const scriptResponse = await fetch(root + '/admin/app.js', { headers: { authorization: auth } });
@@ -92,6 +99,7 @@ describe('Mailbox Manager admin UI', () => {
       append(...nodes: BrowserElement[]) { this.children.push(...nodes); }
       replaceChildren(...nodes: BrowserElement[]) { this.children = [...nodes]; }
       addEventListener(type: string, handler: (...args: any[]) => unknown) { this.listeners.set(type, handler); }
+      setAttribute(name: string, value: string) { (this as any)[name === 'aria-pressed' ? 'ariaPressed' : name] = value; }
       getAttribute(name: string) {
         if (name === 'data-id') return this.dataset.id ?? null;
         if (name === 'data-action') return this.dataset.action ?? null;
@@ -143,6 +151,15 @@ describe('Mailbox Manager admin UI', () => {
     expect(browserListeners.get('addMailbox')?.has('click')).toBe(true);
     expect(browserListeners.get('provider')?.has('change')).toBe(true);
     expect(browserListeners.get('form')?.has('submit')).toBe(true);
+    expect(browserListeners.get('passwordToggle')?.has('click')).toBe(true);
+    browserListeners.get('addMailbox')?.get('click')?.();
+    expect(elementFor('providerHelp').textContent).toContain('authorized client password');
+    expect(elementFor('password').type).toBe('password');
+    browserListeners.get('passwordToggle')?.get('click')?.();
+    expect(elementFor('password').type).toBe('text');
+    expect(elementFor('passwordToggle').textContent).toBe('Hide');
+    browserListeners.get('passwordToggle')?.get('click')?.();
+    expect(elementFor('password').type).toBe('password');
 
     const unsafeSender = await fetch(root + '/admin/api/accounts', {
       method: 'POST',
@@ -263,7 +280,7 @@ describe('Mailbox Manager admin UI', () => {
     const message = {
       id: 'message-ref', mailbox: 'INBOX', uid: 1, account: 'campaign',
       from: ['creator@example.com'], to: ['campaign@example.com'], cc: [],
-      subject: '<svg onload=alert(1)>', date: new Date('2026-10-09T02:00:00Z'),
+      subject: '<svg onload=alert(1)>', date: new Date(Date.now() - 30 * 60 * 1000),
       text: '<script>alert(1)</script>Hi', html: '<img src=x onerror=alert(1)>',
       messageId: '<r1@example.com>', inReplyTo: '<s1@example.com>',
       references: ['<s1@example.com>'], attachments: [], unread: true
@@ -271,7 +288,7 @@ describe('Mailbox Manager admin UI', () => {
     const sent = {
       ...message, id: 'sent-ref', mailbox: 'Sent',
       from: ['campaign@example.com'], to: ['creator@example.com'], unread: false,
-      date: new Date('2026-10-08T01:00:00Z'), messageId: '<s1@example.com>', inReplyTo: null, references: []
+      date: new Date(Date.now() - 90 * 60 * 1000), messageId: '<s1@example.com>', inReplyTo: null, references: []
     };
     const registry = new MailAccountRegistry([{
       id: 'campaign', address: 'campaign@example.com', fromName: 'Campaign', source: 'environment',
