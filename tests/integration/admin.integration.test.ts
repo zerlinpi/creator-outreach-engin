@@ -151,7 +151,7 @@ describe('Mailbox Manager admin UI', () => {
     expect(browserListeners.get('provider')?.has('change')).toBe(true);
     expect(browserListeners.get('form')?.has('submit')).toBe(true);
     expect(browserListeners.get('passwordToggle')?.has('click')).toBe(true);
-    expect(browserListeners.get('provider')?.has('change')).toBe(true);
+    browserListeners.get('addMailbox')?.get('click')?.();
     expect(elementFor('providerHelp').textContent).toContain('authorized client password');
 
     const unsafeSender = await fetch(root + '/admin/api/accounts', {
