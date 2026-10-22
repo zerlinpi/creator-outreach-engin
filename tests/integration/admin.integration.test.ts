@@ -61,6 +61,13 @@ describe('Mailbox Manager admin UI', () => {
     expect(adminHtml).toContain('<script src="/admin/app.js" defer></script>');
     expect(adminHtml).toContain('id="addMailbox"');
     expect(adminHtml).toContain('id="cancelDialog"');
+    expect(adminHtml).toContain('id="passwordToggle"');
+    expect(adminHtml).toContain('id="providerHelp"');
+    expect(adminHtml).toContain('id="saveMailbox"');
+    expect(adminHtml).toContain('Incoming mail · IMAP');
+    expect(adminHtml).toContain('Outgoing mail · SMTP');
+    expect(adminHtml).toContain('Stored encrypted at rest.');
+    expect(adminHtml).toContain('dialog-head');
 
     expect((await fetch(root + '/admin/app.js')).status).toBe(401);
     const scriptResponse = await fetch(root + '/admin/app.js', { headers: { authorization: auth } });
@@ -143,6 +150,9 @@ describe('Mailbox Manager admin UI', () => {
     expect(browserListeners.get('addMailbox')?.has('click')).toBe(true);
     expect(browserListeners.get('provider')?.has('change')).toBe(true);
     expect(browserListeners.get('form')?.has('submit')).toBe(true);
+    expect(browserListeners.get('passwordToggle')?.has('click')).toBe(true);
+    expect(browserListeners.get('provider')?.has('change')).toBe(true);
+    expect(elementFor('providerHelp').textContent).toContain('authorized client password');
 
     const unsafeSender = await fetch(root + '/admin/api/accounts', {
       method: 'POST',
