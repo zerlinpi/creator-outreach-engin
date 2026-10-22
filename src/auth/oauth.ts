@@ -232,7 +232,7 @@ main{width:min(100%,480px)}.brand{display:flex;align-items:center;gap:10px;margi
 <section class="card" aria-labelledby="page-title"><div class="eyebrow">Secure connection</div><h1 id="page-title">Authorize mail access</h1>
 <p><span class="app-name">${escapeHtml(clientName)}</span> is requesting access to the mailboxes configured for Creator Outreach. Review the request before continuing.</p>
 <div class="permission"><span class="permission-label">Requested permission</span><code>${escapeHtml(scope)}</code></div>
-<div class="permission"><span class="permission-label">Redirect destination</span><code>${escapeHtml(redirectUri)}</code></div>
+<div class="permission"><span class="permission-label">Redirect destination:</span><code>${escapeHtml(redirectUri)}</code></div>
 ${errorMessage ? `<div class="error" role="alert">${escapeHtml(errorMessage)}</div>` : ''}
 <form method="post" action="/oauth/authorize">
 <input type="hidden" name="request_id" value="${escapeHtml(requestId)}">
