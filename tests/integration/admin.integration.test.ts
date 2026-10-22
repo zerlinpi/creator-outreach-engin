@@ -280,7 +280,7 @@ describe('Mailbox Manager admin UI', () => {
     const message = {
       id: 'message-ref', mailbox: 'INBOX', uid: 1, account: 'campaign',
       from: ['creator@example.com'], to: ['campaign@example.com'], cc: [],
-      subject: '<svg onload=alert(1)>', date: new Date('2026-10-09T02:00:00Z'),
+      subject: '<svg onload=alert(1)>', date: new Date(Date.now() - 30 * 60 * 1000),
       text: '<script>alert(1)</script>Hi', html: '<img src=x onerror=alert(1)>',
       messageId: '<r1@example.com>', inReplyTo: '<s1@example.com>',
       references: ['<s1@example.com>'], attachments: [], unread: true
@@ -288,7 +288,7 @@ describe('Mailbox Manager admin UI', () => {
     const sent = {
       ...message, id: 'sent-ref', mailbox: 'Sent',
       from: ['campaign@example.com'], to: ['creator@example.com'], unread: false,
-      date: new Date('2026-10-08T01:00:00Z'), messageId: '<s1@example.com>', inReplyTo: null, references: []
+      date: new Date(Date.now() - 90 * 60 * 1000), messageId: '<s1@example.com>', inReplyTo: null, references: []
     };
     const registry = new MailAccountRegistry([{
       id: 'campaign', address: 'campaign@example.com', fromName: 'Campaign', source: 'environment',
