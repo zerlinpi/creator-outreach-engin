@@ -99,6 +99,7 @@ describe('Mailbox Manager admin UI', () => {
       append(...nodes: BrowserElement[]) { this.children.push(...nodes); }
       replaceChildren(...nodes: BrowserElement[]) { this.children = [...nodes]; }
       addEventListener(type: string, handler: (...args: any[]) => unknown) { this.listeners.set(type, handler); }
+      setAttribute(name: string, value: string) { (this as any)[name === 'aria-pressed' ? 'ariaPressed' : name] = value; }
       getAttribute(name: string) {
         if (name === 'data-id') return this.dataset.id ?? null;
         if (name === 'data-action') return this.dataset.action ?? null;
@@ -153,6 +154,12 @@ describe('Mailbox Manager admin UI', () => {
     expect(browserListeners.get('passwordToggle')?.has('click')).toBe(true);
     browserListeners.get('addMailbox')?.get('click')?.();
     expect(elementFor('providerHelp').textContent).toContain('authorized client password');
+    expect(elementFor('password').type).toBe('password');
+    browserListeners.get('passwordToggle')?.get('click')?.();
+    expect(elementFor('password').type).toBe('text');
+    expect(elementFor('passwordToggle').textContent).toBe('Hide');
+    browserListeners.get('passwordToggle')?.get('click')?.();
+    expect(elementFor('password').type).toBe('password');
 
     const unsafeSender = await fetch(root + '/admin/api/accounts', {
       method: 'POST',
